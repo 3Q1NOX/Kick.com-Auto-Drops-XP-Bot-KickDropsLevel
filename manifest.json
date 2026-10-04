@@ -1,0 +1,77 @@
+{
+  "manifest_version": 3,
+  "name": "Kick Drops & Level",
+  "version": "1.0.0",
+  "description": "Sadece Drop farm ve Level bot — temiz arayüz. Kick Control'den sadeleştirilmiş.",
+  "permissions": [
+    "storage",
+    "scripting",
+    "alarms",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://kick.com/*",
+    "https://*.kick.com/*",
+    "https://web.kick.com/*",
+    "https://player.kick.com/*",
+    "wss://*.pusher.com/*"
+  ],
+  "background": {
+    "service_worker": "background/background.js"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "Kick Drops & Level"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://kick.com/*"
+      ],
+      "js": [
+        "content/page-hook.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://kick.com/*"
+      ],
+      "js": [
+        "content/settings.js",
+        "content/quality-160.js",
+        "content/stall-guard.js",
+        "content/i18n.js",
+        "content/level-bot.js",
+        "content/drops.js",
+        "content/ui.js",
+        "content/main.js"
+      ],
+      "css": [
+        "content/content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/*"
+      ],
+      "matches": [
+        "https://kick.com/*",
+        "https://*.kick.com/*"
+      ]
+    }
+  ]
+}

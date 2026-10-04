@@ -1,52 +1,26 @@
-KickDropsLevel, Kick.com platformunda yayınları arka planda izlerken otomatik olarak Drop kazanmanızı ve profil seviyenizi (XP) yükseltmenizi sağlayan bir tarayıcı eklentisidir.
+# Kick Drops & Level
 
-✨ Özellikler
-Otomatik Drop Toplama: Yayınlardaki aktif Drop ödüllerini otomatik olarak takip eder ve toplar.
+Sadeleştirilmiş Kick eklentisi — **sadece Drops farm** ve **Level bot**.
 
-Otomatik Seviye/XP Kasma: Arka planda yayını aktif tutarak Seviye (Level) kazanımını sürdürür.
+Diğer tüm özellikler (adblock, chat, multistream, mod log, theater, recorder, vb.) kaldırıldı.
 
-Yayın Donma Koruması (Stall Guard): Yayın takıldığında veya donduğunda otomatik olarak yayını yenileyerek kesintisiz izleme sağlar.
+## Özellikler
 
-Otomatik Düşük Kalite (160p): İnternet ve sistem kaynaklarını korumak için yayın kalitesini otomatik olarak en düşük seviyeye çeker.
+- **Drops Farm**: Aktif kampanyaları seç, otomatik kanal geçişi, ilerleme HUD, otomatik claim
+- **Level Bot**: Level için izleme / anti-stuck koruması / sekmeyi aktif tutma
 
-Çoklu Dil Desteği (i18n): Farklı dil seçenekleri ile kolay kullanım.
+## Kurulum
 
-Gelişmiş Ayarlar Menüsü: Hangi özelliklerin aktif olacağını kullanıcı dostu arayüzden yönetebilirsiniz.
+1. Bu klasörü indir
+2. `chrome://extensions` → Geliştirici modu
+3. **Paketlenmemiş yükle** → bu klasörü seç
 
-📦 Kurulum
-Bu depoyu ZIP olarak indirin ve bir klasöre çıkartın.
+## Kullanım
 
-Tarayıcınızda (Chrome, Edge, Brave vb.) chrome://extensions/ adresine gidin.
+- Kick sayfasında sağ altta **DL** butonu → panel
+- Popup’tan hızlı aç/kapa
+- Kampanya listesi panelden seçilir
 
-Sağ üst köşeden "Geliştirici modunu" (Developer mode) aktif edin.
+## Sorumluluk
 
-"Paketlenmemiş öge yükle" (Load unpacked) butonuna tıklayın ve klasörü seçin.
-
-Eklenti kullanıma hazır!
-
-🇬🇧 English
-KickDropsLevel is a browser extension designed to automatically claim Drops and farm profile Level/XP while watching streams on Kick.com in the background.
-
-✨ Features
-Auto Drop Claiming: Automatically monitors and claims active Drop rewards on Kick streams.
-
-Auto Level/XP Farming: Keeps stream viewing active in the background for continuous level progress.
-
-Stall Guard: Detects frozen or stuck video streams and automatically reloads them to ensure uninterrupted farming.
-
-Auto Low Quality (160p): Automatically reduces video stream quality to minimum to save bandwidth and system resources.
-
-Multi-language Support (i18n): Easy to use with multi-language capabilities.
-
-Customizable Settings UI: Toggle features on/off easily through a clean extension popup interface.
-
-📦 Installation
-Download this repository as a ZIP file and extract it.
-
-Go to chrome://extensions/ in your Chromium browser (Chrome, Edge, Brave, etc.).
-
-Enable "Developer mode" in the top right corner.
-
-Click "Load unpacked" and select the extracted extension folder.
-
-The extension is now ready to use!
+Resmi olmayan üçüncü taraf araçtır. Kick ToS’a aykırı kullanım riski kullanıcıya aittir.
