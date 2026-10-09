@@ -1,7 +1,7 @@
 ## 🎬 Video
 [![Videoyu YouTube'da İzle](https://img.youtube.com/vi/i2x2PPQhKpM/maxresdefault.jpg)](https://youtu.be/i2x2PPQhKpM)
 
-**▶️ [Videoyu YouTube'da İzle](https://youtu.be/i2x2PPQhKpM)
+**▶️ [Videoyu](https://youtu.be/i2x2PPQhKpM)
 
 
 <div align="center">
