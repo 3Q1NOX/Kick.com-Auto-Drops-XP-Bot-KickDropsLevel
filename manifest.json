@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Kick Drops & Level",
-  "version": "1.0.37",
+  "version": "1.0.46",
   "description": "Sadece Drop farm ve Level bot \u2014 temiz aray\u00fcz. Kick Control'den sadele\u015ftirilmi\u015f.",
   "permissions": [
     "storage",

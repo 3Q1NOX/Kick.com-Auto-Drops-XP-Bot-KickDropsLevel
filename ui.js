@@ -118,7 +118,7 @@
     }
     apply();
     window.addEventListener('resize', apply);
-    setInterval(apply, 2000);
+    setInterval(apply, 10000);
     KC.syncMenuSize = apply;
   })();
 
@@ -135,66 +135,63 @@
       '<button type="button" id="kc-float-logo" class="kc-float-logo" title="' + t('panel_title') + '">' +
       '<img class="kc-ico kc-ico-lg" src="' + gearSrc + '" alt="">' +
       '</button>' +
-      '<span class="kc-float-title" style="display:none"></span>' +
+      '<span class="kc-float-title">Drops & Level</span>' +
       '<button type="button" id="kc-float-min" title="Küçült">▾</button>' +
       '</div>' +
       '<div class="kc-float-body" id="kc-float-body">' +
-      '<div class="kc-float-toggles">' +
-      '<label class="kc-row"><span>' + t('drops_enable') + '</span><input type="checkbox" data-key="drops_enabled"></label>' +
-      '<label class="kc-row"><span>' + t('drops_auto_claim') + '</span><input type="checkbox" data-key="drops_auto_claim"></label>' +
-      '<label class="kc-row"><span>' + t('drops_hud') + '</span><input type="checkbox" data-key="drops_hud"></label>' +
-      '<label class="kc-row"><span>' + t('level_bot') + '</span><input type="checkbox" data-key="level_bot"></label>' +
-      '<div class="kc-row kc-row-select"><span>' + t('min_viewers') + '<span class="kc-row-hint">Düşük izleyicili yayınları atla</span></span>' +
+
+      '<div class="kc-sec">Drops</div>' +
+      '<div class="kc-grid2">' +
+      '<label class="kc-row" title="Drop farm"><span>Drops Farm</span><input type="checkbox" data-key="drops_enabled"></label>' +
+      '<label class="kc-row" title="Otomatik claim"><span>Oto claim</span><input type="checkbox" data-key="drops_auto_claim"></label>' +
+      '<label class="kc-row" title="İlerleme HUD"><span>HUD</span><input type="checkbox" data-key="drops_hud"></label>' +
+      '<label class="kc-row" title="Level bot"><span>Level Bot</span><input type="checkbox" data-key="level_bot"></label>' +
+      '<label class="kc-row" title="Kompakt HUD"><span>Kompakt</span><input type="checkbox" data-key="hud_compact"></label>' +
+      '</div>' +
+      '<div class="kc-actions-row">' +
+      '<button type="button" class="kc-btn-sm" id="kc-open-camps" title="Kampanya seç">Kampanya</button>' +
+      '<button type="button" class="kc-btn-sm" id="kc-claim-now" title="Ödülleri şimdi al">Claim</button>' +
+      '<button type="button" class="kc-btn-sm" id="kc-open-log" title="Geçiş logu">Log</button>' +
+      '</div>' +
+
+      '<div class="kc-sec">Koruma</div>' +
+      '<div class="kc-grid2">' +
+      '<label class="kc-row" title="Anti-stuck"><span>Anti-stuck</span><input type="checkbox" data-key="anti_stuck"></label>' +
+      '<label class="kc-row" title="Sekmeyi aktif tut"><span>Aktif tut</span><input type="checkbox" data-key="bg_watch"></label>' +
+      '<label class="kc-row" title="Takılma onarıcı"><span>Onarıcı</span><input type="checkbox" data-key="stall_guard"></label>' +
+      '<label class="kc-row" title="Yayın durumu kutusu"><span>Durum</span><input type="checkbox" data-key="stall_debug"></label>' +
+      '</div>' +
+
+      '<div class="kc-sec">Ayarlar</div>' +
+      '<div class="kc-row kc-row-select" title="Min. izleyici">' +
+      '<span>Min. izleyici</span>' +
       '<select id="kc-min-viewers" data-key="min_viewers">' +
-      '<option value="0">Hepsi</option>' +
-      '<option value="5">5+</option>' +
-      '<option value="10">10+</option>' +
-      '<option value="25">25+</option>' +
-      '<option value="50">50+</option>' +
-      '<option value="100">100+</option>' +
-      '<option value="250">250+</option>' +
-      '<option value="500">500+</option>' +
+      '<option value="0">Hepsi</option><option value="5">5+</option><option value="10">10+</option>' +
+      '<option value="25">25+</option><option value="50">50+</option><option value="100">100+</option>' +
+      '<option value="250">250+</option><option value="500">500+</option>' +
       '</select></div>' +
-      '<label class="kc-row"><span>' + t('anti_stuck') + '</span><input type="checkbox" data-key="anti_stuck"></label>' +
-      '<label class="kc-row"><span>' + t('bg_watch') + '</span><input type="checkbox" data-key="bg_watch"></label>' +
-      '<label class="kc-row"><span>Takılma onarıcı<span class="kc-row-hint">Yayın donarsa (pencere küçülünce) otomatik düzeltir</span></span><input type="checkbox" data-key="stall_guard"></label>' +
-      '<label class="kc-row"><span>Yayın durumu<span class="kc-row-hint">Sağ altta sade durum kutusu (akıyor / takılı)</span></span><input type="checkbox" data-key="stall_debug"></label>' +
-      '<div class="kc-row"><span>Yayını şimdi düzelt</span><button type="button" class="kc-btn-sm" id="kc-fix-now">Düzelt</button></div>' +
-      '<div class="kc-row"><span>' + t('next_stream') + '<span class="kc-row-hint">Level bot canlı listesinden sıradaki</span></span>' +
-      '<button type="button" class="kc-btn-sm" id="kc-next-stream">Geç</button></div>' +
-      '<label class="kc-row"><span>160p (düşük kalite)</span><input type="checkbox" data-key="quality_160"></label>' +
-      '<div class="kc-row kc-row-select"><span>Yayın filtresi<span class="kc-row-hint">Sadece CSS · kasma yapmaz · drop/level devam eder</span></span>' +
+      '<div class="kc-row kc-row-select" title="Yayın filtresi">' +
+      '<span>Filtre</span>' +
       '<select id="kc-video-filter" data-key="video_filter">' +
       '<option value="off">Kapalı</option>' +
-      '<option value="vivid">Canlı renk</option>' +
-      '<option value="vivid_plus">Canlı+</option>' +
-      '<option value="crisp">Net / keskin</option>' +
-      '<option value="cinema">Sinema</option>' +
-      '<option value="warm">Sıcak</option>' +
-      '<option value="cool">Soğuk</option>' +
-      '<option value="neon">Neon</option>' +
-      '<option value="retro">Retro</option>' +
-      '<option value="soft">Yumuşak</option>' +
-      '<option value="dim">Karart</option>' +
-      '<option value="dark">Çok karanlık</option>' +
+      '<option value="vivid">Canlı</option>' +
+      '<option value="dim">Loş</option>' +
+      '<option value="dark">Koyu</option>' +
       '<option value="gray">Gri</option>' +
       '<option value="hide">Gizle</option>' +
       '</select></div>' +
+      '<label class="kc-row" title="160p düşük kalite"><span>160p</span><input type="checkbox" data-key="quality_160"></label>' +
+
+      '<div class="kc-actions-row">' +
+      '<button type="button" class="kc-btn-sm" id="kc-fix-now" title="Yayını şimdi düzelt">Düzelt</button>' +
+      '<button type="button" class="kc-btn-sm" id="kc-next-stream" title="Sonraki yayına geç">Sonraki</button>' +
       '</div>' +
-'<div class="kc-opacity-row">' +
-      '<div class="kc-opacity-top"><span>Boştaki saydamlık<span class="kc-row-hint">Fare üstünde değilken menüler bu kadar görünür</span></span><b id="kc-idle-op-val">60%</b></div>' +
-      '<input type="range" id="kc-idle-op" min="10" max="100" step="5" value="60">' +
+
+      '<div class="kc-opacity-row">' +
+      '<div class="kc-opacity-top"><span>Boşta saydamlık</span><b id="kc-idle-op-val">100%</b></div>' +
+      '<input type="range" id="kc-idle-op" min="15" max="100" step="5" value="100">' +
       '</div>' +
-'<div class="kc-campaigns-head">' +
-      '<span>' + t('select_campaigns') + '</span>' +
-      '<button type="button" id="kc-drops-refresh" class="kc-btn-sm">' + t('refresh') + '</button>' +
-      '</div>' +
-      '<div class="kc-search-wrap">' +
-      '<input type="search" id="kc-drops-search" placeholder="' + t('search_placeholder') + '" autocomplete="off">' +
-      '</div>' +
-      '<div id="kc-drops-list" class="kc-drops-list">' +
-      '<div class="kc-empty">' + t('loading') + '</div>' +
-      '</div>' +
+
       '</div>';
 
     document.documentElement.appendChild(root);
@@ -353,6 +350,16 @@
     })();
     KC.on('setting:idle_opacity', applyIdleOpacity);
 
+    document.getElementById('kc-open-camps')?.addEventListener('click', () => {
+      try { KC.openCampaignPicker && KC.openCampaignPicker(); } catch (_) {}
+    });
+    document.getElementById('kc-claim-now')?.addEventListener('click', () => {
+      try { KC.claimNow && KC.claimNow(); } catch (_) {}
+    });
+    document.getElementById('kc-open-log')?.addEventListener('click', () => {
+      try { KC.showSwitchLog && KC.showSwitchLog(); } catch (_) {}
+    });
+    KC.on('setting:hud_compact', () => { try { KC.renderDropsHud && KC.renderDropsHud(); } catch (_) {} });
     document.getElementById('kc-fix-now')?.addEventListener('click', () => {
       if (KC.fixStreamNow) KC.fixStreamNow();
     });

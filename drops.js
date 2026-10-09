@@ -88,24 +88,11 @@
     const st = String(statusText || '');
     if (/geçiliyor|aranıyor|cooldown|bekleniyor/i.test(st)) return st;
     const sel = selectedCampaigns();
-    if (!sel.length) return 'Drops: kampanya yok / bitti';
-    const names = sel
-      .slice(0, 2)
-      .map((c) => c.name || c.id)
-      .filter(Boolean);
+    if (!sel.length) return 'Drops: kampanya yok';
     const slug = currentSlug() || '';
-    if (controlling) {
-      return (
-        'Drop farm · ' +
-        (names[0] || 'kampanya') +
-        (slug ? ' @ ' + slug : '')
-      );
-    }
-    return (
-      'Drops hazır · ' +
-      (names.join(', ') || sel.length + ' kampanya') +
-      (slug ? ' · ' + slug : '')
-    );
+    const name = (sel[0] && (sel[0].name || sel[0].id)) || 'kampanya';
+    if (controlling) return 'Drop · ' + name + (slug ? ' · ' + slug : '');
+    return 'Drops · ' + (sel.length > 1 ? sel.length + ' kampanya' : name) + (slug ? ' · ' + slug : '');
   }
   try {
     KC.getDropsNowDoing = getDropsNowDoing;
@@ -1473,21 +1460,38 @@
     }
   }
 
+  /**
+   * Kick drops progress_units / required_units = DAKİKA (saniye değil).
+   * Örnek: required_units=120 → 2 saat izleme.
+   */
   function fmtUnits(u) {
-    if (u == null) return '';
-    if (u >= 60) return Math.round(u / 60) + ' dk';
-    return u + ' sn';
-  }
-
-  function fmtRemain(unitsLeft) {
-    if (unitsLeft == null || unitsLeft <= 0) return 'hazır';
-    const s = Math.ceil(Number(unitsLeft) || 0);
-    if (s < 60) return '~' + s + ' sn';
-    const m = Math.ceil(s / 60);
-    if (m < 60) return '~' + m + ' dk';
+    if (u == null || u === '') return '';
+    const m = Math.max(0, Math.round(Number(u) || 0));
+    if (m < 60) return m + ' dk';
     const h = Math.floor(m / 60);
     const rm = m % 60;
-    return '~' + h + 's ' + rm + 'dk';
+    if (rm === 0) return h + ' sa';
+    return h + ' sa ' + rm + ' dk';
+  }
+
+  /** Kalan dakika → okunaklı metin */
+  function fmtRemain(minsLeft) {
+    if (minsLeft == null) return '—';
+    const m = Math.ceil(Number(minsLeft) || 0);
+    if (m <= 0) return 'Hazır';
+    if (m < 60) return 'Kalan ' + m + ' dk';
+    const h = Math.floor(m / 60);
+    const rm = m % 60;
+    if (rm === 0) return 'Kalan ' + h + ' sa';
+    return 'Kalan ' + h + ' sa ' + rm + ' dk';
+  }
+
+  /** İzlenen / gereken · kalan */
+  function fmtProgressLine(watched, need) {
+    if (!(need > 0)) return '';
+    const w = Math.max(0, Math.min(Number(watched) || 0, need));
+    const left = Math.max(0, need - w);
+    return fmtUnits(w) + ' / ' + fmtUnits(need) + (left > 0 ? ' · ' + fmtRemain(left) : ' · Hazır');
   }
 
   /** Merge campaign rewards with progress API (per-reward claimed + shared watch units). */
@@ -1550,7 +1554,12 @@
     const host =
       document.getElementById('kc-camp-list') ||
       document.getElementById('kc-drops-list');
-    if (!host) return;
+    if (!host) {
+      try {
+        renderDropsHud();
+      } catch (_) {}
+      return;
+    }
     const ids = new Set(selectedIds());
     const sorted = campaigns
       .filter((c) => isActiveCampaign(c) && !isCampaignFullyClaimed(c))
@@ -1584,16 +1593,22 @@
             const pctLabel = pct == null ? '—' : pct + '%';
             const timeLbl =
               need > 0 && units != null
-                ? fmtUnits(Math.min(units, need)) + ' / ' + fmtUnits(need)
+                ? fmtProgressLine(units, need)
                 : need > 0
-                  ? fmtUnits(need)
+                  ? '0 / ' + fmtUnits(need) + ' · ' + fmtRemain(need)
                   : '';
             const fill = pct == null ? 0 : pct;
+            const rImg = resolveDropImage(r.image_url || r.image || '');
             return (
               '<div class="kc-drops-reward' +
               (rwDone ? ' is-done' : '') +
               '">' +
               '<div class="kc-drops-reward-head">' +
+              (rImg
+                ? '<img class="kc-drops-reward-img" src="' +
+                  escapeHtml(rImg) +
+                  '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">'
+                : '') +
               '<span class="kc-drops-reward-name">' +
               escapeHtml(r.name || 'Ödül') +
               '</span>' +
@@ -1656,6 +1671,7 @@
           }
         }
 
+        const thumb = campaignThumbUrl(c);
         return (
           '<label class="kc-drops-item' +
           (active ? '' : ' kc-drops-upcoming') +
@@ -1671,6 +1687,11 @@
           '>' +
           '<span class="kc-drops-check-ui" aria-hidden="true"></span>' +
           '</span>' +
+          (thumb
+            ? '<img class="kc-drops-thumb" src="' +
+              escapeHtml(thumb) +
+              '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">'
+            : '') +
           '<span class="kc-drops-meta">' +
           '<span class="kc-drops-top">' +
           '<span class="kc-drops-name">' +
@@ -1711,6 +1732,30 @@
       .replace(/"/g, '&quot;');
   }
 
+  function resolveDropImage(url) {
+    if (!url) return '';
+    const s = String(url).trim();
+    if (!s) return '';
+    if (/^https?:\/\//i.test(s)) return s;
+    if (s.startsWith('//')) return 'https:' + s;
+    // relative paths from Kick drops API → CDN
+    return 'https://ext.cdn.kick.com/' + s.replace(/^\/+/, '');
+  }
+
+  function campaignThumbUrl(c) {
+    if (!c) return '';
+    const rewards = c.rewards || [];
+    for (const r of rewards) {
+      const u = resolveDropImage(r.image_url || r.image || '');
+      if (u) return u;
+    }
+    const org = c.organization || {};
+    const u2 = resolveDropImage(org.logo_url || org.logo || '');
+    if (u2) return u2;
+    const cat = c.category || {};
+    return resolveDropImage(cat.image_url || cat.banner_image_url || '') || '';
+  }
+
   // ── Detaylı izleme ilerleme paneli ──
   function buildLevelHudHtml() {
     let levelHtml = '';
@@ -1733,21 +1778,16 @@
         (typeof KC.getDropsNowDoing === 'function' && KC.getDropsNowDoing()) ||
         (L && L.status) ||
         '—';
+      // Şu an: kısa "Akıyor · kanal" — Kanal satırı yok (zaten şu an'da)
       levelHtml =
         '<div class="kc-combined-level">' +
         '<div class="kc-combined-level-head">Level</div>' +
-        '<div class="kc-combined-now" title="Eklentinin anlık yaptığı iş">' +
+        '<div class="kc-combined-now" title="Anlık durum">' +
         '<span class="kc-now-label">Şu an</span>' +
         '<span class="kc-now-text">' +
         esc(nowDoing) +
         '</span></div>' +
-        '<div class="kc-combined-level-status">' +
-        esc((L && L.status) || 'Kapalı') +
-        '</div>' +
         '<div class="kc-lhud-grid">' +
-        '<div class="kc-lhud-row"><span class="k">Kanal</span><span class="v">' +
-        esc(slug) +
-        '</span></div>' +
         '<div class="kc-lhud-row"><span class="k">Durum</span><span class="v ' +
         esc(healthClass || '') +
         '">' +
@@ -1800,6 +1840,92 @@
     return levelHtml;
   }
 
+
+  /** Compact selectable campaign list for inside Drops HUD / panel */
+  function buildInlineCampaignListHtml() {
+    const ids = new Set(selectedIds());
+    const list = campaigns
+      .filter((c) => isActiveCampaign(c) && !isCampaignFullyClaimed(c))
+      .slice()
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    if (!list.length) {
+      return (
+        '<div class="kc-inline-camps">' +
+        '<div class="kc-inline-camps-head"><span>Kampanyalar</span>' +
+        '<button type="button" class="kc-btn-sm kc-inline-refresh" data-inline-refresh title="Kampanyaları yenile">↻</button></div>' +
+        '<div class="kc-inline-empty">Aktif kampanya yok</div></div>'
+      );
+    }
+    const nSel = list.filter((c) => ids.has(String(c.id))).length;
+    const rows = list
+      .map((c) => {
+        const selected = ids.has(String(c.id));
+        const thumb = campaignThumbUrl(c);
+        const merged = getMergedRewards(c);
+        const rewards = merged.rewards;
+        const units = merged.units;
+        const maxNeed = rewards.reduce(
+          (m, r) => Math.max(m, r.required_units || 0),
+          0
+        );
+        const doneN = rewards.filter((r) => r.claimed).length;
+        let pct = null;
+        if (maxNeed > 0 && units != null) {
+          pct = Math.max(0, Math.min(100, Math.round((units / maxNeed) * 100)));
+        }
+        const cat = (c.category && c.category.name) || '';
+        return (
+          '<label class="kc-inline-camp' +
+          (selected ? ' is-on' : '') +
+          '">' +
+          '<input type="checkbox" data-drop-id="' +
+          c.id +
+          '" ' +
+          (selected ? 'checked' : '') +
+          '>' +
+          (thumb
+            ? '<img class="kc-inline-camp-img" src="' +
+              escapeHtml(thumb) +
+              '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">'
+            : '<span class="kc-inline-camp-ph"></span>') +
+          '<span class="kc-inline-camp-meta">' +
+          '<span class="kc-inline-camp-name">' +
+          escapeHtml(c.name || 'Drop') +
+          '</span>' +
+          '<span class="kc-inline-camp-sub">' +
+          (cat ? escapeHtml(cat) + ' · ' : '') +
+          doneN +
+          '/' +
+          rewards.length +
+          (pct != null ? ' · ' + pct + '%' : '') +
+          (maxNeed > 0 && units != null
+            ? ' · ' + fmtRemain(Math.max(0, maxNeed - units))
+            : maxNeed > 0
+              ? ' · ' + fmtRemain(maxNeed)
+              : '') +
+          '</span></span></label>'
+        );
+      })
+      .join('');
+    return (
+      '<div class="kc-inline-camps">' +
+      '<div class="kc-inline-camps-head">' +
+      '<span>Kampanyalar</span>' +
+      '<span class="kc-inline-camps-count">' +
+      nSel +
+      '/' +
+      list.length +
+      ' seçili</span>' +
+      '<button type="button" class="kc-btn-sm kc-inline-refresh" data-inline-refresh title="Kampanyaları yenile">↻</button>' +
+      '<button type="button" class="kc-btn-sm kc-inline-all" data-inline-all>Tümü</button>' +
+      '<button type="button" class="kc-btn-sm kc-inline-none" data-inline-none>Hiçbiri</button>' +
+      '</div>' +
+      '<div class="kc-inline-camps-list">' +
+      rows +
+      '</div></div>'
+    );
+  }
+
   function buildHudBodyHtml() {
     const dropsOn = !!KC.settings?.drops_enabled;
     const levelHtml = buildLevelHudHtml();
@@ -1850,15 +1976,9 @@
     }
     if (!items.length) {
       return (
-        '<div class="kc-prog-live"><span class="kc-prog-dot"></span> Farm açık · kampanya yok</div>' +
-        (levelHtml ||
-          '<div class="kc-prog-empty">' +
-            '<div class="kc-prog-empty-ico">📦</div>' +
-            '<div>' +
-            (t('drops_hud_empty') || 'Seçili aktif drop yok') +
-            '</div>' +
-            '<div class="kc-prog-empty-hint">Panelden kampanya seç</div>' +
-            '</div>')
+        '<div class="kc-prog-live"><span class="kc-prog-dot"></span> Farm açık · kampanya seç</div>' +
+        (levelHtml || '') +
+        buildInlineCampaignListHtml()
       );
     }
 
@@ -1913,13 +2033,13 @@
               statusLbl = 'ALINDI';
               timeLbl = need > 0 ? fmtUnits(need) : '';
             } else if (need > 0 && units != null) {
-              timeLbl =
-                fmtUnits(Math.min(units, need)) + ' / ' + fmtUnits(need);
+              const w = Math.min(units, need);
               const rem = Math.max(0, need - units);
-              statusLbl = rem > 0 ? fmtRemain(rem) : 'Hazır';
+              timeLbl = fmtUnits(w) + ' / ' + fmtUnits(need);
+              statusLbl = rem > 0 ? fmtRemain(rem) : 'Hazır · claim et';
             } else if (need > 0) {
               timeLbl = '0 / ' + fmtUnits(need);
-              statusLbl = hasProg ? '…' : 'Yükleniyor';
+              statusLbl = hasProg ? 'Kalan ' + fmtUnits(need) : 'İlerleme yükleniyor…';
             }
             return (
               '<div class="kc-prog-rew' +
@@ -1973,7 +2093,16 @@
             ? ' · ' + fmtRemain(left)
             : done
               ? ' · tamam'
-              : '') +
+              : hasProg
+                ? ''
+                : ' · ilerleme…') +
+          (units != null && maxNeed > 0 && !done
+            ? '<br><span class="kc-prog-card-eta">' +
+              fmtUnits(Math.min(units, maxNeed)) +
+              ' / ' +
+              fmtUnits(maxNeed) +
+              ' izlendi</span>'
+            : '') +
           '</div></div></div>' +
           '<div class="kc-prog-rews">' +
           rew +
@@ -1987,7 +2116,8 @@
       '<div class="kc-prog-cards">' +
       cards +
       '</div>' +
-      levelHtml
+      levelHtml +
+      buildInlineCampaignListHtml()
     );
   }
 
@@ -1999,9 +2129,55 @@
     if (hud) {
       hud.classList.toggle('kc-hud-compact', !!KC.settings?.hud_compact);
     }
-    body.innerHTML = buildHudBodyHtml();
     const st = document.getElementById('kc-dhud-status');
-    if (st) st.textContent = statusText || '';
+    if (st && st.textContent !== (statusText || '')) st.textContent = statusText || '';
+    const html = buildHudBodyHtml();
+    // İçerik değişmediyse DOM'a dokunma (takılma / görsel yeniden yükleme / scroll sıfırlanması yok)
+    if (body.__kcHtml === html && body.childNodes.length) return;
+    const scrollTop = body.scrollTop;
+    body.__kcHtml = html;
+    body.innerHTML = html;
+    body.scrollTop = scrollTop;
+    // Inline kampanya seçimi
+    body.querySelectorAll('input[data-drop-id]').forEach((inp) => {
+      inp.addEventListener('change', () => {
+        toggleCampaign(inp.getAttribute('data-drop-id'), inp.checked);
+        try { renderDropsHud(); } catch (_) {}
+        try { renderCampaignList(); } catch (_) {}
+      });
+    });
+    const refBtn = body.querySelector('[data-inline-refresh]');
+    if (refBtn) {
+      refBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        pollAndClaim().catch(() => {});
+        doRefreshCampaigns();
+      });
+    }
+    const allBtn = body.querySelector('[data-inline-all]');
+    if (allBtn) {
+      allBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const ids = campaigns
+          .filter((c) => isActiveCampaign(c) && !isCampaignFullyClaimed(c))
+          .map((c) => String(c.id));
+        KC.saveSetting('drops_selected', ids);
+        try { renderDropsHud(); } catch (_) {}
+        try { renderCampaignList(); } catch (_) {}
+      });
+    }
+    const noneBtn = body.querySelector('[data-inline-none]');
+    if (noneBtn) {
+      noneBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        KC.saveSetting('drops_selected', []);
+        try { renderDropsHud(); } catch (_) {}
+        try { renderCampaignList(); } catch (_) {}
+      });
+    }
     try {
       KC.renderDropsHud = renderDropsHud;
     } catch (_) {}
@@ -2558,13 +2734,11 @@
       (lastClaimMsg || t('drops_claim_idle') || 'Claim bekleniyor…') +
       '</div>' +
       '<div class="kc-drops-actions">' +
-      '<button type="button" class="kc-btn kc-btn-primary" id="kc-drops-open-picker">' +
-      (t('drops_pick_campaigns') || 'Kampanya seç') +
-      '</button>' +
       '<button type="button" class="kc-btn" id="kc-drops-claim-now">' +
       (t('drops_claim_now') || 'Şimdi al') +
       '</button>' +
       '</div>' +
+      '<div class="kc-drops-list" id="kc-drops-list"></div>' +
       '<div class="kc-drops-sel-summary" id="kc-drops-sel-summary"></div>';
 
     // Place after level section rows
@@ -2632,6 +2806,8 @@
   }
 
   // Public API — level-bot checks shouldControl() before switching
+  KC.claimNow = () => pollAndClaim();
+  KC.showSwitchLog = () => showSwitchLogPanel();
   KC.startDrops = start;
   KC.stopDrops = stop;
   KC.getDropsStatus = () => statusText;
@@ -2744,7 +2920,7 @@
 
 
   function flashRefreshBtn(ok, msg) {
-    const btns = document.querySelectorAll('#kc-drops-refresh, [data-dhud-refresh]');
+    const btns = document.querySelectorAll('#kc-drops-refresh, [data-dhud-refresh], [data-inline-refresh], [data-camp-refresh]');
     btns.forEach((b) => {
       const prev = b.textContent;
       b.disabled = true;
@@ -2771,7 +2947,7 @@
   }
 
   async function doRefreshCampaigns() {
-    const btns = document.querySelectorAll('#kc-drops-refresh, [data-dhud-refresh]');
+    const btns = document.querySelectorAll('#kc-drops-refresh, [data-dhud-refresh], [data-inline-refresh], [data-camp-refresh]');
     btns.forEach((b) => {
       b.disabled = true;
       b.textContent = '…';
@@ -2816,13 +2992,4 @@
     });
   } catch (_) {}
 
-  // Panel may be created later
-  const obs = new MutationObserver(() => {
-    if (document.getElementById('kc-panel-body') && !document.getElementById('kc-drops-section')) {
-      ensurePanelSection();
-    }
-  });
-  try {
-    obs.observe(document.documentElement, { childList: true, subtree: true });
-  } catch (_) {}
 })();

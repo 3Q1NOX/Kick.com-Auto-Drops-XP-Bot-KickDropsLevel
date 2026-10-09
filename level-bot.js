@@ -866,28 +866,28 @@
           S.statusClass === 'warn' ||
           (S.status && /takıl|yüklen|durak|hata/i.test(String(S.status))));
 
-      if (/geçiliyor|aranıyor|bekleniyor|canlı/i.test(st)) {
-        nowDoing = st;
-      } else if (streamBad && (antiOn || levelOn || dropsOn)) {
+      // Kısa özet: yayın durumu · kanal (gereksiz uzun metin yok)
+      const streamOk = !streamBad && S && S.status && !/takıl|yüklen|durak|kapalı/i.test(String(S.status));
+      if (streamBad && (antiOn || levelOn || dropsOn)) {
         nowDoing =
-          'Yayın onarılıyor' +
-          (S && S.status ? ' · ' + S.status : '') +
+          (S && S.status ? S.status : 'Yayın onarılıyor') +
+          (slug ? ' · ' + slug : '') +
           (S && S.next && S.next !== 'İzleniyor' && S.next !== '—'
             ? ' → ' + S.next
             : '');
+      } else if (streamOk || (S && S.status)) {
+        // Örn: "Akıyor · cyberrulztv"
+        nowDoing = (S.status || st || 'İzleniyor') + (slug ? ' · ' + slug : '');
+      } else if (/geçiliyor|aranıyor|bekleniyor|canlı/i.test(st)) {
+        nowDoing = st + (slug && !st.includes(slug) ? ' · ' + slug : '');
       } else if (dropsOn && KC.getDropsNowDoing) {
         const d = KC.getDropsNowDoing();
         if (d) nowDoing = d;
-        else if (levelOn) nowDoing = 'Level XP farm · ' + slug;
-        else nowDoing = 'Drops farm · ' + slug;
+        else nowDoing = (levelOn ? 'Level' : 'Drops') + (slug ? ' · ' + slug : '');
       } else if (levelOn) {
-        nowDoing = 'Level XP biriktiriliyor · ' + slug;
-      } else if (antiOn) {
-        nowDoing = 'Anti-stuck koruma · ' + slug;
-      } else if (KC.settings?.bg_watch) {
-        nowDoing = 'Sekme aktif tutuluyor · ' + slug;
+        nowDoing = 'Level' + (slug ? ' · ' + slug : '');
       } else if (st && st !== 'Kapalı') {
-        nowDoing = st;
+        nowDoing = st + (slug ? ' · ' + slug : '');
       } else {
         nowDoing = 'Kapalı';
       }
@@ -931,7 +931,7 @@
     try {
       refreshCombinedHud();
     } catch (_) {}
-  }, 2000);
+  }, 3000);
 
   KC.on('bot:status', () => {
     try {
