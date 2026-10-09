@@ -16,6 +16,8 @@ const DEFAULTS = {
   panel_opacity: 95,
   hud_compact: false,
   quality_160: false,
+  stream_quality: 'auto',
+  video_filter: 'off',
   switch_log: [],
   terms_accepted: false
 };

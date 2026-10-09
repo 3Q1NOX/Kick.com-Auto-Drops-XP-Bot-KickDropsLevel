@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Kick Drops & Level",
-  "version": "1.0.0",
-  "description": "Sadece Drop farm ve Level bot — temiz arayüz. Kick Control'den sadeleştirilmiş.",
+  "version": "1.0.37",
+  "description": "Sadece Drop farm ve Level bot \u2014 temiz aray\u00fcz. Kick Control'den sadele\u015ftirilmi\u015f.",
   "permissions": [
     "storage",
     "scripting",
@@ -50,6 +50,7 @@
       "js": [
         "content/settings.js",
         "content/quality-160.js",
+        "content/video-filter.js",
         "content/stall-guard.js",
         "content/i18n.js",
         "content/level-bot.js",

@@ -1,18 +1,16 @@
 (function () {
   const KC = (window.KickControl = window.KickControl || {});
 
+  // Kick 2026 frontend: web.kick.com/api/v1 is the only live drops API host.
+  // kick.com/api/v1/drops/* and kick.com/api/v1/livestreams return 404.
   const CAMPAIGNS_EPS = [
-    'https://web.kick.com/api/v1/drops/campaigns',
-    'https://kick.com/api/v1/drops/campaigns',
-    'https://kick.com/api/v2/drops/campaigns'
+    'https://web.kick.com/api/v1/drops/campaigns'
   ];
   const PROGRESS_EPS = [
-    'https://web.kick.com/api/v1/drops/progress',
-    'https://kick.com/api/v1/drops/progress'
+    'https://web.kick.com/api/v1/drops/progress'
   ];
   const CLAIM_EPS = [
-    'https://web.kick.com/api/v1/drops/claim',
-    'https://kick.com/api/v1/drops/claim'
+    'https://web.kick.com/api/v1/drops/claim'
   ];
   const LIVES_EP = 'https://web.kick.com/api/v1/livestreams';
   // Keep legacy names for any leftover references
@@ -24,6 +22,10 @@
   const CAMPAIGN_POLL_MS = 2 * 60 * 1000;
   const CLAIM_POLL_MS = 20 * 1000; // ilerleme + claim sık
   const BAD_NEED = 3;
+  /** Max partner channels to probe live (DEDsafio etc. have 100+) */
+  const MAX_FIXED_PROBE = 80;
+  /** Concurrent live probes */
+  const FIXED_PROBE_CONCURRENCY = 10;
 
   let botTimer = null;
   let campaignTimer = null;
@@ -50,6 +52,7 @@
   let claimInFlight = false;
   let lastClaimMsg = '';
   const claimedIds = new Set(); // reward ids claimed this session
+  const claimFailIds = new Map(); // rewardId -> { at, status } — avoid spam
   /** campaign ids where every reward is claimed — stop farming these */
   const completedCampaignIds = new Set();
   let progressByCampaign = {}; // id -> { progress_units, rewards[] }
@@ -80,6 +83,34 @@
     if (hs) hs.textContent = txt;
   }
 
+  function getDropsNowDoing() {
+    if (!KC.settings?.drops_enabled) return '';
+    const st = String(statusText || '');
+    if (/geçiliyor|aranıyor|cooldown|bekleniyor/i.test(st)) return st;
+    const sel = selectedCampaigns();
+    if (!sel.length) return 'Drops: kampanya yok / bitti';
+    const names = sel
+      .slice(0, 2)
+      .map((c) => c.name || c.id)
+      .filter(Boolean);
+    const slug = currentSlug() || '';
+    if (controlling) {
+      return (
+        'Drop farm · ' +
+        (names[0] || 'kampanya') +
+        (slug ? ' @ ' + slug : '')
+      );
+    }
+    return (
+      'Drops hazır · ' +
+      (names.join(', ') || sel.length + ' kampanya') +
+      (slug ? ' · ' + slug : '')
+    );
+  }
+  try {
+    KC.getDropsNowDoing = getDropsNowDoing;
+  } catch (_) {}
+
   function sessionToken() {
     try {
       const m = document.cookie.match(/(?:^|;\s*)session_token=([^;]+)/);
@@ -90,7 +121,13 @@
   }
 
   function headers(jsonBody) {
-    const h = { Accept: 'application/json', 'x-app-platform': 'web' };
+    // Do NOT set Origin/Referer — browser forbidden headers; extension sets them automatically
+    const h = {
+      Accept: 'application/json',
+      'x-app-platform': 'web',
+      'X-Client-Token':
+        'e1393935a959b4020a4491574f6490129f678acdaa92760471263db43487f823'
+    };
     const tok = sessionToken();
     if (tok) h.Authorization = 'Bearer ' + tok;
     if (jsonBody) h['Content-Type'] = 'application/json';
@@ -173,35 +210,93 @@
           }
           allClaimed = false;
           const need = Number(rw.required_units ?? rw.required ?? 0) || 0;
+          // Greasyfork-compatible: claimed must not be true; progress >= required
           const earned =
             rw.claimable === true ||
             rw.status === 'claimable' ||
-            (need > 0 && progressUnits >= need);
+            rw.status === 'Claimable' ||
+            (need > 0 &&
+              progressUnits >= need &&
+              rw.claimed !== true &&
+              rw.status !== 'claimed' &&
+              rw.status !== 'Claimed' &&
+              rw.status !== 'locked');
           if (!earned) continue;
+          // Account link required → claim returns 400 Bad Request
+          if (needsAccountLink(c)) {
+            lastClaimMsg =
+              'Hesap bağla: ' + (c.name || 'kampanya') + ' (Inventory → Connect)';
+            continue;
+          }
           ready++;
           if (!auto) continue;
 
+          const rid = String(rw.id || '');
+          const campId = String(c.id || c.campaign_id || '');
+          if (!rid || !campId) {
+            console.warn('[KC] drops claim skip — missing id', { rid, campId, c });
+            continue;
+          }
+          // Skip rewards that recently failed with client/validation errors
+          try {
+            const prev = claimFailIds.get(rid);
+            if (prev && Date.now() - prev.at < 5 * 60 * 1000) continue;
+          } catch (_) {}
+
           try {
             let claimedOk = false;
-            for (const claimUrl of CLAIM_EPS) {
-              try {
-                const cr = await fetch(claimUrl, {
-                  method: 'POST',
-                  credentials: 'include',
-                  headers: headers(true),
-                  body: JSON.stringify({
-                    reward_id: rw.id,
-                    campaign_id: c.id
-                  })
-                });
-                if (cr.ok) {
-                  claimedOk = true;
-                  break;
+            let lastStatus = 0;
+            let lastBody = '';
+            // Kick expects snake_case; ensure string ULIDs
+            const bodies = [
+              { reward_id: rid, campaign_id: campId },
+              { rewardId: rid, campaignId: campId }
+            ];
+            outerClaim: for (const claimUrl of CLAIM_EPS) {
+              for (const body of bodies) {
+                let claimRes = null;
+                try {
+                  claimRes = await fetch(claimUrl, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: headers(true),
+                    body: JSON.stringify(body)
+                  });
+                } catch (fe) {
+                  lastStatus = -1;
+                  lastBody = String(fe && fe.message ? fe.message : fe);
+                  claimRes = null;
                 }
-              } catch (_) {}
+                if (!claimRes) continue;
+                try {
+                  lastStatus = claimRes.status;
+                  try {
+                    lastBody = (await claimRes.text() || '').slice(0, 200);
+                  } catch (_) {}
+                  if (claimRes.ok) {
+                    claimedOk = true;
+                    break outerClaim;
+                  }
+                  // Auth / validation — stop
+                  if (
+                    lastStatus === 400 ||
+                    lastStatus === 401 ||
+                    lastStatus === 403 ||
+                    lastStatus === 409 ||
+                    lastStatus === 422
+                  ) {
+                    break outerClaim;
+                  }
+                } catch (inner) {
+                  lastBody = String(
+                    inner && inner.message ? inner.message : inner
+                  );
+                }
+              }
             }
             if (claimedOk) {
-              claimedIds.add(String(rw.id));
+              claimedIds.add(rid);
+              claimFailIds.delete(rid);
               claimedNow++;
               lastClaimAt = Date.now();
               const name = rw.name || 'Drop';
@@ -216,10 +311,41 @@
                 KC.emit('drops:claimed', { reward: rw, campaign: c });
               } catch (_) {}
             } else {
-              console.warn('[KC] drops claim failed', cr.status, rw.id);
+              let hint = '';
+              if (lastStatus === 400) {
+                hint =
+                  ' (Bad Request — oyun hesabı bağlı değil veya ödül claim edilemez)';
+                lastClaimMsg =
+                  'Claim 400: Inventory → hesabı bağla / ödül hazır değil';
+                // Session-long skip (API will keep returning 400)
+                try {
+                  claimFailIds.set(rid, { at: Date.now() + 86400000, status: 400 });
+                } catch (_) {}
+              } else if (lastStatus === 401 || lastStatus === 403) {
+                hint = ' (giriş/yetki)';
+                lastClaimMsg =
+                  t('drops_need_login') ||
+                  'Claim için giriş / hesap bağlantısı gerekli';
+              } else if (lastStatus === 404) {
+                hint = ' (ödül yok / zaten alındı)';
+              } else if (lastStatus === 409 || lastStatus === 422) {
+                hint = ' (claimable değil veya zaten alındı)';
+              } else if (lastStatus === 429) {
+                hint = ' (rate limit)';
+              }
+              try {
+                claimFailIds.set(rid, { at: Date.now(), status: lastStatus });
+              } catch (_) {}
+              console.warn(
+                '[KC] drops claim failed',
+                lastStatus,
+                rid,
+                lastBody,
+                hint
+              );
             }
           } catch (e) {
-            console.warn('[KC] drops claim error', e);
+            console.warn('[KC] drops claim error', e && e.message ? e.message : e);
           }
         }
 
@@ -247,13 +373,7 @@
       } else if (ready > 0 && !auto) {
         lastClaimMsg =
           (t('drops_ready') || 'Alınabilir') + ': ' + ready;
-        showClaimToast(
-          t('drops_ready_title') || 'Drop hazır!',
-          (t('drops_ready_body') || 'Envanterden al veya otomatik almayı aç') +
-            ' (' +
-            ready +
-            ')'
-        );
+        // Ready toast removed — only panel status is updated
       }
 
       // All selected campaigns fully claimed → stop drop farming
@@ -318,7 +438,11 @@
 
   function isActiveCampaign(c) {
     if (!c) return false;
+    // Kick now sends status: active | expired | upcoming — trust it first
     if (c.status === 'active') return true;
+    if (c.status === 'expired' || c.status === 'ended' || c.status === 'completed')
+      return false;
+    if (c.status === 'upcoming') return false;
     const now = Date.now();
     const s = parseIso(c.starts_at);
     const e = parseIso(c.ends_at);
@@ -326,9 +450,21 @@
     return false;
   }
 
+  /** Campaign requires external account link before claim is allowed */
+  function needsAccountLink(c) {
+    if (!c) return false;
+    const url = c.connect_url || c.connectUrl || '';
+    if (!url) return false;
+    // explicit flags from progress/campaigns API
+    if (c.user_app_connected === true || c.userAppConnected === true) return false;
+    if (c.connected === true || c.is_connected === true) return false;
+    return true;
+  }
+
   function isUpcomingCampaign(c) {
     if (!c) return false;
     if (c.status === 'upcoming') return true;
+    if (c.status === 'active' || c.status === 'expired') return false;
     const now = Date.now();
     const s = parseIso(c.starts_at);
     return s && s.getTime() > now;
@@ -486,108 +622,438 @@
     return ids;
   }
 
+  /** Channel slugs listed on a single campaign (partner whitelist). */
+  function campaignChannelSlugs(c) {
+    const slugs = [];
+    for (const ch of c?.channels || []) {
+      let s = '';
+      if (typeof ch === 'string') s = ch;
+      else if (ch && typeof ch === 'object')
+        s = ch.slug || ch.username || ch.user?.username || '';
+      s = String(s).toLowerCase().trim();
+      if (s && s !== 'undefined' && s !== 'null') slugs.push(s);
+    }
+    return slugs;
+  }
+
+  /** True when campaign restricts drops to listed partner channels only. */
+  function isPartnerRestricted(c) {
+    return campaignChannelSlugs(c).length > 0;
+  }
+
+  function campaignCategoryId(c) {
+    const primary = c?.category?.id;
+    if (primary != null && Number(primary) > 0) return Number(primary);
+    for (const r of c?.rewards || []) {
+      const rid = r.category_id;
+      if (rid != null && Number(rid) > 0) return Number(rid);
+    }
+    return null;
+  }
+
+  function campaignCategorySlug(c) {
+    return (c?.category?.slug || '').toString().toLowerCase().trim() || null;
+  }
+
+  /**
+   * Open (non-partner) campaigns → category ids to browse.
+   * Partner-restricted campaigns are NOT included (only their channel list counts).
+   */
   function targetCategories() {
     const cats = new Set();
     for (const c of selectedCampaigns()) {
-      const id = c.category?.id ?? c.rewards?.[0]?.category_id;
-      if (id) cats.add(Number(id));
-      for (const r of c.rewards || []) {
-        if (r.category_id) cats.add(Number(r.category_id));
-      }
+      if (isPartnerRestricted(c)) continue; // don't farm random category streams
+      const id = campaignCategoryId(c);
+      if (id) cats.add(id);
     }
     return [...cats];
   }
 
-  function targetChannelSlugs() {
+  function targetCategorySlugs() {
     const slugs = new Set();
     for (const c of selectedCampaigns()) {
-      for (const ch of c.channels || []) {
-        const s = (ch.slug || ch.username || ch).toString().toLowerCase();
-        if (s) slugs.add(s);
-      }
+      if (isPartnerRestricted(c)) continue;
+      const s = campaignCategorySlug(c);
+      if (s) slugs.add(s);
     }
     return [...slugs];
   }
 
-  async function fetchLivesForCategory(categoryId, limit) {
-    try {
-      const url =
+  /** All partner channel slugs across selected partner-restricted campaigns. */
+  function targetChannelSlugs() {
+    const slugs = new Set();
+    for (const c of selectedCampaigns()) {
+      if (!isPartnerRestricted(c)) continue;
+      for (const s of campaignChannelSlugs(c)) slugs.add(s);
+    }
+    return [...slugs];
+  }
+
+  function mapLiveItem(x, fallbackCatId) {
+    if (!x) return null;
+    const slug = (
+      x.channel?.slug ||
+      x.slug ||
+      x.channel_slug ||
+      (typeof x.channel === 'string' ? x.channel : '') ||
+      ''
+    )
+      .toString()
+      .toLowerCase()
+      .trim();
+    if (!slug) return null;
+    const viewers =
+      x.viewer_count ?? x.viewers ?? x.channel?.viewers ?? 0;
+    const catId =
+      x.category?.id ??
+      x.categories?.[0]?.id ??
+      x.categories?.[0]?.category_id ??
+      fallbackCatId ??
+      null;
+    const title = x.title || x.session_title || '';
+    return { slug, viewers: Number(viewers) || 0, categoryId: catId, title };
+  }
+
+  async function fetchLivesForCategory(categoryId, limit, categorySlug) {
+    const lim = limit || 25;
+    // Order: web.kick (id) → stream browse by SLUG (numeric subcategory is broken on Kick)
+    // → stream browse by id as last resort
+    const urls = [];
+    // Prefer stream browse by slug (most reliable category filter on Kick)
+    if (categorySlug) {
+      urls.push(
+        'https://kick.com/stream/livestreams/en?limit=' +
+          lim +
+          '&sort=desc&subcategory=' +
+          encodeURIComponent(categorySlug)
+      );
+      urls.push(
+        'https://kick.com/stream/livestreams/tr?limit=' +
+          lim +
+          '&sort=desc&subcategory=' +
+          encodeURIComponent(categorySlug)
+      );
+    }
+    if (categoryId) {
+      urls.push(
         LIVES_EP +
-        '?limit=' +
-        (limit || 20) +
-        '&sort=viewer_count_desc&category_id=' +
-        encodeURIComponent(categoryId);
-      const res = await fetch(url, {
-        credentials: 'include',
-        headers: headers(),
-        cache: 'no-store'
-      });
-      if (!res.ok) return [];
+          '?limit=' +
+          lim +
+          '&sort=viewer_count_desc&category_id=' +
+          encodeURIComponent(categoryId)
+      );
+    }
+    if (categoryId && !categorySlug) {
+      // numeric subcategory often ignores filter on Kick — low priority
+      urls.push(
+        'https://kick.com/stream/livestreams/en?limit=' +
+          lim +
+          '&sort=desc&subcategory=' +
+          encodeURIComponent(categoryId)
+      );
+    }
+
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, {
+          credentials: 'include',
+          headers: { Accept: 'application/json', 'x-app-platform': 'web' },
+          cache: 'no-store'
+        });
+        if (!res.ok) continue;
+        const j = await res.json();
+        const data = j?.data;
+        let list = [];
+        if (Array.isArray(data?.livestreams)) list = data.livestreams;
+        else if (Array.isArray(data)) list = data;
+        else if (Array.isArray(j?.livestreams)) list = j.livestreams;
+        else if (Array.isArray(j)) list = j;
+        if (!list.length) continue;
+        const mapped = list.map((x) => mapLiveItem(x, categoryId)).filter(Boolean);
+        if (!mapped.length) continue;
+        if (categoryId) {
+          const matched = mapped.filter(
+            (m) => m.categoryId == null || Number(m.categoryId) === Number(categoryId)
+          );
+          // If endpoint returned wrong category (stream?subcategory=id bug), skip
+          if (matched.length) return matched;
+          // web.kick with category_id should already be correct; if no catId on items accept
+          if (url.indexOf('web.kick.com') !== -1) return mapped;
+          continue;
+        }
+        return mapped;
+      } catch (e) {
+        console.warn('[KC] drops lives fetch fail', url, e);
+      }
+    }
+    return [];
+  }
+
+  /**
+   * Full live info for a channel slug, or null if offline.
+   * @returns {Promise<{slug:string,viewers:number,categoryId:number|null,categorySlug:string,title:string}|null>}
+   */
+  async function getSlugLiveInfo(slug) {
+    try {
+      const res = await fetch(
+        'https://kick.com/api/v2/channels/' + encodeURIComponent(slug) + '/livestream',
+        {
+          credentials: 'include',
+          headers: { Accept: 'application/json' },
+          cache: 'no-store'
+        }
+      );
+      if (!res.ok) return null;
       const j = await res.json();
-      const data = j?.data;
-      const list = data?.livestreams || (Array.isArray(data) ? data : []) || [];
-      return list
-        .map((x) => {
-          const slug = (x.channel?.slug || x.slug || '').toLowerCase();
-          return slug
-            ? {
-                slug,
-                viewers: x.viewer_count || 0,
-                categoryId: x.category?.id || categoryId,
-                title: x.title || ''
-              }
-            : null;
-        })
-        .filter(Boolean);
+      const data = j?.data ?? j;
+      if (!data || data === null) return null;
+      if (data.is_live === false) return null;
+      const live = !!(
+        data.id ||
+        data.session_title ||
+        data.playback_url ||
+        data.viewer_count != null ||
+        data.viewers != null
+      );
+      if (!live) return null;
+      let categoryId = null;
+      if (data.category?.id != null) categoryId = Number(data.category.id);
+      else if (data.categories?.[0]?.id != null) categoryId = Number(data.categories[0].id);
+      const categorySlug = (
+        data.category?.slug ||
+        data.categories?.[0]?.slug ||
+        ''
+      )
+        .toString()
+        .toLowerCase();
+      return {
+        slug,
+        viewers: Number(data.viewer_count ?? data.viewers ?? 0) || 0,
+        categoryId,
+        categorySlug,
+        title: data.session_title || data.title || ''
+      };
     } catch (_) {
-      return [];
+      return null;
     }
   }
 
   async function isSlugLive(slug) {
-    try {
-      const res = await fetch(
-        'https://kick.com/api/v2/channels/' + encodeURIComponent(slug) + '/livestream',
-        { credentials: 'include', headers: { Accept: 'application/json' }, cache: 'no-store' }
-      );
-      if (!res.ok) return false;
-      const j = await res.json();
-      const data = j?.data ?? j;
-      if (!data || data.is_live === false) return false;
-      return !!(data.id || data.session_title || data.playback_url);
-    } catch (_) {
-      return false;
+    return !!(await getSlugLiveInfo(slug));
+  }
+
+  /** Shuffle array copy (Fisher–Yates) so we don't always probe the same offline partners first. */
+  function shuffled(arr) {
+    const a = (arr || []).slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = a[i];
+      a[i] = a[j];
+      a[j] = t;
     }
+    return a;
+  }
+
+  /**
+   * Required category ids for partner-restricted selected campaigns (slug → allowed cats).
+   * Partner must be live AND in the campaign category (Minecraft partner streaming IRL = no drop).
+   */
+  function partnerAllowedCategories() {
+    // slug -> Set of category ids (empty set = any category ok)
+    const map = new Map();
+    for (const c of selectedCampaigns()) {
+      if (!isPartnerRestricted(c)) continue;
+      const cat = campaignCategoryId(c);
+      const catSlug = campaignCategorySlug(c);
+      for (const s of campaignChannelSlugs(c)) {
+        if (!map.has(s)) map.set(s, { ids: new Set(), slugs: new Set() });
+        const ent = map.get(s);
+        if (cat) ent.ids.add(Number(cat));
+        if (catSlug) ent.slugs.add(catSlug);
+      }
+    }
+    return map;
+  }
+
+  /**
+   * Probe partner channels in parallel batches.
+   * Only returns partners that are LIVE and in the correct drop category.
+   */
+  async function probeFixedChannelsLive(slugs) {
+    const allowed = partnerAllowedCategories();
+    const list = shuffled(slugs || []).slice(0, MAX_FIXED_PROBE);
+    const live = [];
+    let probed = 0;
+    for (let i = 0; i < list.length; i += FIXED_PROBE_CONCURRENCY) {
+      const batch = list.slice(i, i + FIXED_PROBE_CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(async (slug) => {
+          try {
+            const info = await getSlugLiveInfo(slug);
+            if (!info) return null;
+            const rule = allowed.get(slug);
+            // Must match campaign category when campaign defines one
+            if (rule && (rule.ids.size || rule.slugs.size)) {
+              const idOk = !rule.ids.size || (info.categoryId != null && rule.ids.has(Number(info.categoryId)));
+              const slugOk =
+                !rule.slugs.size ||
+                (info.categorySlug && rule.slugs.has(info.categorySlug));
+              if (!idOk && !slugOk) {
+                // live but wrong game — skip (this was the atinycherry IRL bug)
+                return null;
+              }
+            }
+            return {
+              slug: info.slug,
+              viewers: info.viewers,
+              categoryId: info.categoryId,
+              title: info.title,
+              partner: true
+            };
+          } catch (_) {}
+          return null;
+        })
+      );
+      probed += batch.length;
+      for (const s of results) {
+        if (s) live.push(s);
+      }
+      // Enough valid partners to rotate between
+      if (live.length >= 10) break;
+      // Keep searching if we only found wrong-category lives
+      if (probed >= MAX_FIXED_PROBE) break;
+    }
+    return live;
   }
 
   async function collectTargetLives() {
     const out = [];
     const seen = new Set();
-    const cats = targetCategories();
-    const fixed = targetChannelSlugs();
+    const cats = targetCategories(); // only open (non-partner) campaigns
+    const catSlugs = targetCategorySlugs();
+    const fixed = targetChannelSlugs(); // only partner-restricted campaigns
 
-    for (const slug of fixed) {
-      if (seen.has(slug)) continue;
-      if (await isSlugLive(slug)) {
-        seen.add(slug);
-        out.push({ slug, viewers: 0, categoryId: null, title: '' });
+    const idToSlug = {};
+    for (const c of selectedCampaigns()) {
+      if (c.category?.id != null && c.category?.slug) {
+        idToSlug[Number(c.category.id)] = String(c.category.slug).toLowerCase();
       }
     }
 
+    // A) Partner-restricted campaigns
+    // Fast path: category livestreams ∩ partner whitelist (avoids probing 100 offline/wrong-game partners)
+    // Slow path: probe remaining partners that weren't in the category top list
+    if (fixed.length) {
+      const fixedSet = new Set(fixed);
+      // Collect required categories for partner campaigns
+      const partnerCats = new Set();
+      const partnerCatSlugs = new Map(); // id -> slug
+      for (const c of selectedCampaigns()) {
+        if (!isPartnerRestricted(c)) continue;
+        const id = campaignCategoryId(c);
+        const s = campaignCategorySlug(c);
+        if (id) {
+          partnerCats.add(id);
+          if (s) partnerCatSlugs.set(id, s);
+        }
+      }
+
+      for (const cat of partnerCats) {
+        try {
+          const lives = await fetchLivesForCategory(
+            cat,
+            50,
+            partnerCatSlugs.get(cat) || idToSlug[Number(cat)] || null
+          );
+          for (const L of lives) {
+            if (!fixedSet.has(L.slug)) continue; // only partners
+            if (seen.has(L.slug)) continue;
+            seen.add(L.slug);
+            out.push({ ...L, partner: true });
+          }
+        } catch (e) {
+          console.warn('[KC] drops partner∩cat', cat, e);
+        }
+      }
+
+      // If still few targets, probe partners directly (with category check)
+      if (out.length < 3) {
+        try {
+          const partners = await probeFixedChannelsLive(
+            fixed.filter((s) => !seen.has(s))
+          );
+          for (const L of partners) {
+            if (seen.has(L.slug)) continue;
+            seen.add(L.slug);
+            out.push(L);
+          }
+        } catch (e) {
+          console.warn('[KC] drops fixed probe', e);
+        }
+      }
+    }
+
+    // B) Open category campaigns (no channel whitelist) → any live stream in category
     for (const cat of cats) {
-      const lives = await fetchLivesForCategory(cat, 25);
-      for (const L of lives) {
-        if (seen.has(L.slug)) continue;
-        seen.add(L.slug);
-        out.push(L);
+      try {
+        const lives = await fetchLivesForCategory(cat, 30, idToSlug[Number(cat)] || null);
+        for (const L of lives) {
+          if (seen.has(L.slug)) continue;
+          seen.add(L.slug);
+          out.push(L);
+        }
+      } catch (e) {
+        console.warn('[KC] drops collect cat', cat, e);
+      }
+    }
+
+    if (!cats.length && catSlugs.length) {
+      for (const cs of catSlugs) {
+        try {
+          const lives = await fetchLivesForCategory(null, 30, cs);
+          for (const L of lives) {
+            if (seen.has(L.slug)) continue;
+            seen.add(L.slug);
+            out.push(L);
+          }
+        } catch (_) {}
       }
     }
 
     out.sort((a, b) => (b.viewers || 0) - (a.viewers || 0));
+    if (!out.length) {
+      const now = Date.now();
+      if (!collectTargetLives._lastEmptyLog || now - collectTargetLives._lastEmptyLog > 60000) {
+        collectTargetLives._lastEmptyLog = now;
+        console.warn('[KC] drops: collectTargetLives empty', {
+          cats,
+          catSlugs,
+          fixedCount: fixed.length,
+          selected: selectedCampaigns().map((c) => ({
+            id: c.id,
+            name: c.name,
+            status: c.status,
+            partner: isPartnerRestricted(c),
+            cat: campaignCategoryId(c),
+            catSlug: campaignCategorySlug(c),
+            channels: campaignChannelSlugs(c).length
+          }))
+        });
+      }
+    } else {
+      console.log(
+        '[KC] drops targets',
+        out.length,
+        out.slice(0, 8).map((x) => x.slug + (x.partner ? '*' : ''))
+      );
+    }
     return out;
   }
 
   /**
+   * Does current channel count for at least one selected campaign?
+   * Partner campaign  → slug must be on the campaign channel list (+ category if set).
+   * Open campaign     → any live stream in the campaign category.
    * @returns {Promise<{ok:boolean, catId:number|null, reason:string, categoryChanged:boolean}>}
    */
   async function currentStreamQualifies() {
@@ -595,18 +1061,14 @@
     if (!slug) {
       return { ok: false, catId: null, reason: 'no-slug', categoryChanged: false };
     }
-    const fixed = new Set(targetChannelSlugs());
-    const cats = targetCategories();
-    if (!cats.length && !fixed.size) {
+    const sel = selectedCampaigns();
+    if (!sel.length) {
       return { ok: false, catId: null, reason: 'no-targets', categoryChanged: false };
     }
 
-    // Channel-list only campaigns: listed slug always qualifies
-    if (fixed.has(slug) && !cats.length) {
-      return { ok: true, catId: null, reason: 'listed-channel', categoryChanged: false };
-    }
-
     let catId = null;
+    let catSlug = '';
+    let offline = false;
     try {
       const res = await fetch(
         'https://kick.com/api/v2/channels/' + encodeURIComponent(slug) + '/livestream',
@@ -617,13 +1079,21 @@
       }
       const j = await res.json();
       const data = j?.data ?? j;
-      if (!data || data.is_live === false) {
-        return { ok: false, catId: null, reason: 'offline', categoryChanged: false };
+      if (!data || data === null || data.is_live === false) {
+        offline = true;
+      } else {
+        if (data.category?.id != null) catId = Number(data.category.id);
+        else if (data.categories?.[0]?.id != null) catId = Number(data.categories[0].id);
+        catSlug = (data.category?.slug || data.categories?.[0]?.slug || '')
+          .toString()
+          .toLowerCase();
       }
-      if (data.category?.id != null) catId = Number(data.category.id);
-      else if (data.categories?.[0]?.id != null) catId = Number(data.categories[0].id);
     } catch (_) {
       return { ok: false, catId: null, reason: 'api-error', categoryChanged: false };
+    }
+
+    if (offline) {
+      return { ok: false, catId: null, reason: 'offline', categoryChanged: false };
     }
 
     const categoryChanged =
@@ -639,13 +1109,46 @@
       lastCatId = catId;
     }
 
-    if (cats.length && catId != null && cats.includes(Number(catId))) {
-      lastQualifyAt = Date.now();
-      return { ok: true, catId, reason: 'category-match', categoryChanged };
+    // Evaluate each selected campaign independently
+    let anyPartnerMiss = false;
+    let anyCatMiss = false;
+    for (const c of sel) {
+      const partners = campaignChannelSlugs(c);
+      const needCat = campaignCategoryId(c);
+      const needSlug = campaignCategorySlug(c);
+
+      if (partners.length) {
+        // Partner-restricted: must be on the list
+        if (!partners.includes(slug)) {
+          anyPartnerMiss = true;
+          continue;
+        }
+        // If campaign also has a category, require matching game (streamer switched game → invalid)
+        if (needCat != null && catId != null && Number(catId) !== Number(needCat)) {
+          anyCatMiss = true;
+          continue;
+        }
+        if (needSlug && catSlug && catSlug !== needSlug && needCat == null) {
+          anyCatMiss = true;
+          continue;
+        }
+        lastQualifyAt = Date.now();
+        return { ok: true, catId, reason: 'listed-channel', categoryChanged };
+      }
+
+      // Open category campaign: any streamer in the right category
+      if (needCat != null && catId != null && Number(catId) === Number(needCat)) {
+        lastQualifyAt = Date.now();
+        return { ok: true, catId, reason: 'category-match', categoryChanged };
+      }
+      if (needSlug && catSlug && catSlug === needSlug) {
+        lastQualifyAt = Date.now();
+        return { ok: true, catId, reason: 'category-slug-match', categoryChanged };
+      }
+      if (needCat != null || needSlug) anyCatMiss = true;
     }
 
-    // Streamer switched away from drop category
-    if (cats.length) {
+    if (anyCatMiss || categoryChanged) {
       return {
         ok: false,
         catId,
@@ -653,9 +1156,8 @@
         categoryChanged
       };
     }
-
-    if (fixed.has(slug)) {
-      return { ok: true, catId, reason: 'listed-channel', categoryChanged };
+    if (anyPartnerMiss) {
+      return { ok: false, catId, reason: 'not-partner', categoryChanged };
     }
     return { ok: false, catId, reason: 'no-match', categoryChanged };
   }
@@ -716,7 +1218,10 @@
             ? ' · ' + (t('drops_yield_level') || 'Level bot devam')
             : '')
       );
-      console.warn('[KC] drops: no target lives', reason);
+      if (!goNextDropStream._lastNoTarget || Date.now() - goNextDropStream._lastNoTarget > 30000) {
+        goNextDropStream._lastNoTarget = Date.now();
+        console.warn('[KC] drops: no target lives', reason);
+      }
       return false;
     }
     // Prefer higher viewer, slight shuffle among top
@@ -747,6 +1252,43 @@
     if (controlling) return true;
     return hasLiveTargets;
   }
+
+  /** Manuel "Sonraki" — drops açıksa drop yayınına, değilse level listesine */
+  async function forceNextDropOrLevel(reason) {
+    reason = reason || 'manual-next';
+    // Prefer drops targets when farm is on and campaigns selected
+    if (KC.settings?.drops_enabled && selectedCampaigns().length) {
+      switchCooldownUntil = 0; // manuel: cooldown yok
+      const ok = await goNextDropStream(reason);
+      if (ok) return true;
+      setStatus(
+        (t('drops_none') || 'Uygun drop yayını yok') +
+          (KC.settings?.level_bot ? ' · level listesine bakılıyor…' : '')
+      );
+      // fallback to level only if level bot on
+      if (KC.settings?.level_bot && typeof KC.forceSwitchChannel === 'function') {
+        // avoid recursion: forceSwitchChannel will be the smart one — call level path via KC._goNextLive
+        if (typeof KC._goNextLive === 'function') {
+          KC._goNextLive('manual-drop-fallback');
+          return true;
+        }
+      }
+      return false;
+    }
+    if (typeof KC._goNextLive === 'function') {
+      KC._goNextLive('manual');
+      return true;
+    }
+    if (typeof KC.forceSwitchChannel === 'function') {
+      KC.forceSwitchChannel();
+      return true;
+    }
+    return false;
+  }
+  try {
+    KC.goNextDropStream = goNextDropStream;
+    KC.forceNextStream = forceNextDropOrLevel;
+  } catch (_) {}
 
   async function tick() {
     if (!KC.settings?.drops_enabled) {
@@ -1005,7 +1547,9 @@
   }
 
   function renderCampaignList() {
-    const host = document.getElementById('kc-drops-list');
+    const host =
+      document.getElementById('kc-camp-list') ||
+      document.getElementById('kc-drops-list');
     if (!host) return;
     const ids = new Set(selectedIds());
     const sorted = campaigns
@@ -1168,7 +1712,133 @@
   }
 
   // ── Detaylı izleme ilerleme paneli ──
+  function buildLevelHudHtml() {
+    let levelHtml = '';
+    try {
+      const L = KC.getLevelHudSnapshot && KC.getLevelHudSnapshot();
+      const S = KC.getStreamStatusSnapshot && KC.getStreamStatusSnapshot();
+      if (!(L || S)) return '';
+      function esc(s) {
+        return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+      const statusLine = S ? S.status : L && L.status;
+      const healthClass = S ? S.statusClass : L && L.healthClass;
+      const slug = (S && S.channel) || (L && L.slug) || '—';
+      const nowDoing =
+        (L && L.nowDoing) ||
+        (typeof KC.getDropsNowDoing === 'function' && KC.getDropsNowDoing()) ||
+        (L && L.status) ||
+        '—';
+      levelHtml =
+        '<div class="kc-combined-level">' +
+        '<div class="kc-combined-level-head">Level</div>' +
+        '<div class="kc-combined-now" title="Eklentinin anlık yaptığı iş">' +
+        '<span class="kc-now-label">Şu an</span>' +
+        '<span class="kc-now-text">' +
+        esc(nowDoing) +
+        '</span></div>' +
+        '<div class="kc-combined-level-status">' +
+        esc((L && L.status) || 'Kapalı') +
+        '</div>' +
+        '<div class="kc-lhud-grid">' +
+        '<div class="kc-lhud-row"><span class="k">Kanal</span><span class="v">' +
+        esc(slug) +
+        '</span></div>' +
+        '<div class="kc-lhud-row"><span class="k">Durum</span><span class="v ' +
+        esc(healthClass || '') +
+        '">' +
+        esc(statusLine || (L && L.health) || '—') +
+        '</span></div>';
+      if (S) {
+        const bufBad = S.buffer === 'Az' || S.buffer === 'Yok';
+        const isStuck =
+          S.statusClass === 'bad' ||
+          S.statusClass === 'warn' ||
+          (S.status && /takıl|yüklen|durak/i.test(S.status));
+        if (bufBad) {
+          levelHtml +=
+            '<div class="kc-lhud-row"><span class="k">Tampon</span><span class="v">' +
+            esc(S.buffer + (S.bufferSec ? ' · ' + S.bufferSec : '')) +
+            '</span></div>';
+        }
+        if (isStuck && S.next && S.next !== '—' && S.next !== 'İzleniyor') {
+          levelHtml +=
+            '<div class="kc-lhud-row"><span class="k">Sıradaki</span><span class="v">' +
+            esc(S.next) +
+            '</span></div>';
+        }
+      }
+      if (L) {
+        levelHtml +=
+          '<div class="kc-lhud-row"><span class="k">Oturum</span><span class="v">' +
+          esc(L.session) +
+          '</span></div>' +
+          '<div class="kc-lhud-row"><span class="k">İzleme</span><span class="v">' +
+          esc(L.watch) +
+          '</span></div>';
+      }
+      levelHtml +=
+        '</div>' +
+        '<div class="kc-lhud-flags">' +
+        '<span class="kc-flag' +
+        (L && L.levelBot ? ' on' : '') +
+        '">Level Bot</span>' +
+        '<span class="kc-flag' +
+        (L && L.antiStuck ? ' on' : '') +
+        '">Anti-stuck</span>' +
+        '<span class="kc-flag' +
+        (L && L.bgWatch ? ' on' : '') +
+        '">Aktif tut</span>' +
+        '</div>' +
+        '<button type="button" class="kc-btn-sm kc-lhud-next" data-dhud-next title="Sonraki yayına geç">Sonraki yayın</button>' +
+        '</div>';
+    } catch (_) {}
+    return levelHtml;
+  }
+
   function buildHudBodyHtml() {
+    const dropsOn = !!KC.settings?.drops_enabled;
+    const levelHtml = buildLevelHudHtml();
+
+    // Drops kapalı → sadece level odaklı panel
+    if (!dropsOn) {
+      let live =
+        '<div class="kc-prog-live">' +
+        (KC.settings?.level_bot
+          ? '<span class="kc-prog-dot on"></span> Level bot açık'
+          : '<span class="kc-prog-dot"></span> Level modu · drop farm kapalı') +
+        '</div>';
+      try {
+        const L = KC.getLevelHudSnapshot && KC.getLevelHudSnapshot();
+        const S = KC.getStreamStatusSnapshot && KC.getStreamStatusSnapshot();
+        const slug = (S && S.channel) || (L && L.slug) || '';
+        const health = (S && S.status) || (L && L.health) || '';
+        if (slug || health) {
+          live =
+            '<div class="kc-prog-live">' +
+            (health && /takıl|hata|yok/i.test(health)
+              ? '<span class="kc-prog-dot off"></span> '
+              : '<span class="kc-prog-dot on"></span> ') +
+            escapeHtml(health || 'İzleniyor') +
+            (slug ? ' · <b>' + escapeHtml(slug) + '</b>' : '') +
+            '</div>';
+        }
+      } catch (_) {}
+      if (levelHtml) return live + levelHtml;
+      return (
+        live +
+        '<div class="kc-prog-empty">' +
+        '<div class="kc-prog-empty-ico">▶</div>' +
+        '<div>Level bilgisi</div>' +
+        '<div class="kc-prog-empty-hint">Bir kanal sayfasındayken durum burada görünür</div>' +
+        '</div>'
+      );
+    }
+
     const selIds = new Set(selectedIds());
     let items = campaigns.filter(
       (c) => isActiveCampaign(c) && selIds.has(String(c.id)) && !isCampaignFullyClaimed(c)
@@ -1180,13 +1850,15 @@
     }
     if (!items.length) {
       return (
-        '<div class="kc-prog-empty">' +
-        '<div class="kc-prog-empty-ico">📦</div>' +
-        '<div>' +
-        (t('drops_hud_empty') || 'Seçili aktif drop yok') +
-        '</div>' +
-        '<div class="kc-prog-empty-hint">Panelden kampanya seç, farm’ı aç</div>' +
-        '</div>'
+        '<div class="kc-prog-live"><span class="kc-prog-dot"></span> Farm açık · kampanya yok</div>' +
+        (levelHtml ||
+          '<div class="kc-prog-empty">' +
+            '<div class="kc-prog-empty-ico">📦</div>' +
+            '<div>' +
+            (t('drops_hud_empty') || 'Seçili aktif drop yok') +
+            '</div>' +
+            '<div class="kc-prog-empty-hint">Panelden kampanya seç</div>' +
+            '</div>')
       );
     }
 
@@ -1194,12 +1866,10 @@
     const controllingNow = !!controlling;
     let headerMeta =
       '<div class="kc-prog-live">' +
-      (KC.settings?.drops_enabled
-        ? controllingNow
-          ? '<span class="kc-prog-dot on"></span> İzleniyor' +
-            (slug ? ' · <b>' + escapeHtml(slug) + '</b>' : '')
-          : '<span class="kc-prog-dot"></span> Farm açık · uygun yayın aranıyor'
-        : '<span class="kc-prog-dot off"></span> Farm kapalı') +
+      (controllingNow
+        ? '<span class="kc-prog-dot on"></span> İzleniyor' +
+          (slug ? ' · <b>' + escapeHtml(slug) + '</b>' : '')
+        : '<span class="kc-prog-dot"></span> Farm açık · uygun yayın aranıyor') +
       '</div>';
 
     const cards = items
@@ -1311,54 +1981,6 @@
         );
       })
       .join('');
-
-    function esc(s) {
-      return String(s == null ? '' : s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-    }
-
-    let levelHtml = '';
-    try {
-      const L = KC.getLevelHudSnapshot && KC.getLevelHudSnapshot();
-      if (L) {
-        levelHtml =
-          '<div class="kc-combined-level">' +
-          '<div class="kc-combined-level-head">Level</div>' +
-          '<div class="kc-combined-level-status">' +
-          esc(L.status) +
-          '</div>' +
-          '<div class="kc-lhud-grid">' +
-          '<div class="kc-lhud-row"><span class="k">Kanal</span><span class="v">' +
-          esc(L.slug) +
-          '</span></div>' +
-          '<div class="kc-lhud-row"><span class="k">Durum</span><span class="v ' +
-          esc(L.healthClass) +
-          '">' +
-          esc(L.health) +
-          '</span></div>' +
-          '<div class="kc-lhud-row"><span class="k">Oturum</span><span class="v">' +
-          esc(L.session) +
-          '</span></div>' +
-          '<div class="kc-lhud-row"><span class="k">İzleme</span><span class="v">' +
-          esc(L.watch) +
-          '</span></div>' +
-          '</div>' +
-          '<div class="kc-lhud-flags">' +
-          '<span class="kc-flag' +
-          (L.levelBot ? ' on' : '') +
-          '">Level Bot</span>' +
-          '<span class="kc-flag' +
-          (L.antiStuck ? ' on' : '') +
-          '">Anti-stuck</span>' +
-          '<span class="kc-flag' +
-          (L.bgWatch ? ' on' : '') +
-          '">Aktif tut</span>' +
-          '</div></div>';
-      }
-    } catch (_) {}
 
     return (
       headerMeta +
@@ -1564,6 +2186,8 @@
         (dropIco ? '<img class="kc-ico" src="' + dropIco + '" alt="">' : '') +
         '<span class="kc-dhud-title">Drops · Level</span>' +
         '<div class="kc-dhud-actions">' +
+        '<button type="button" class="kc-dhud-btn kc-dhud-next" data-dhud-next title="Sonraki yayına geç">⏭</button>' +
+        '<button type="button" class="kc-dhud-btn" data-dhud-camps title="Kampanya seç">🎯</button>' +
         '<button type="button" class="kc-dhud-btn" data-dhud-compact title="Kompakt / Detay">▣</button>' +
         '<button type="button" class="kc-dhud-btn" data-dhud-log title="Geçiş logu">☰</button>' +
         '<button type="button" class="kc-dhud-btn" data-dhud-refresh title="Yenile">↻</button>' +
@@ -1626,7 +2250,9 @@
       }
 
       hud.addEventListener('click', (e) => {
-        const t = e.target.closest('[data-dhud-toggle],[data-dhud-refresh],[data-dhud-hide],[data-dhud-compact],[data-dhud-log]');
+        const t = e.target.closest(
+          '[data-dhud-toggle],[data-dhud-refresh],[data-dhud-hide],[data-dhud-compact],[data-dhud-log],[data-dhud-next],[data-dhud-camps]'
+        );
         if (!t) return;
         e.preventDefault();
         e.stopPropagation();
@@ -1641,12 +2267,42 @@
         } else if (t.hasAttribute('data-dhud-refresh')) {
           pollAndClaim().catch(() => {});
           doRefreshCampaigns();
+        } else if (t.hasAttribute('data-dhud-next')) {
+          try {
+            setStatus((t('next_stream') || 'Sonraki yayına geç') + '…');
+            if (typeof KC.forceNextStream === 'function') {
+              Promise.resolve(KC.forceNextStream('manual-hud')).catch((err) =>
+                console.warn('[KC] next stream', err)
+              );
+            } else if (typeof KC.forceSwitchChannel === 'function') {
+              KC.forceSwitchChannel();
+            } else {
+              console.warn('[KC] next stream API yok');
+            }
+          } catch (err) {
+            console.warn('[KC] next stream', err);
+          }
+        } else if (t.hasAttribute('data-dhud-camps')) {
+          openCampaignPicker();
         } else if (t.hasAttribute('data-dhud-hide')) {
           // HUD kalıcı — sadece küçült
           setHudCollapsed(true);
         }
       });
     }
+    // Eski HUD'a sonraki butonu ekle
+    try {
+      const acts = hud.querySelector('.kc-dhud-actions');
+      if (acts && !acts.querySelector('[data-dhud-next]')) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'kc-dhud-btn kc-dhud-next';
+        b.setAttribute('data-dhud-next', '');
+        b.title = 'Sonraki yayına geç';
+        b.textContent = '⏭';
+        acts.insertBefore(b, acts.firstChild);
+      }
+    } catch (_) {}
     // Mevcut HUD ise de konumu uygula
     if (KC.applyPos) {
       try { KC.applyPos(hud, 'pos_drops_hud', { x: 16, y: 80 }); } catch (_) {}
@@ -1662,6 +2318,199 @@
     }
     renderDropsHud();
   }
+
+
+  function updateSelSummary() {
+    const el = document.getElementById('kc-drops-sel-summary');
+    if (!el) return;
+    const ids = selectedIds();
+    const n = ids.length;
+    if (!n) {
+      el.textContent = 'Kampanya seçilmedi · “Kampanya seç”e tıkla';
+      return;
+    }
+    const names = campaigns
+      .filter((c) => ids.includes(String(c.id)))
+      .map((c) => c.name || c.id)
+      .slice(0, 3);
+    el.textContent =
+      n +
+      ' kampanya seçili' +
+      (names.length ? ': ' + names.join(', ') : '') +
+      (n > 3 ? '…' : '');
+  }
+
+  function closeCampaignPicker() {
+    document.getElementById('kc-camp-picker')?.remove();
+    document.getElementById('kc-camp-backdrop')?.remove();
+    try {
+      KC.saveSetting('camp_picker_open', false);
+    } catch (_) {}
+  }
+
+  function openCampaignPicker() {
+    // Toggle: already open → close
+    if (document.getElementById('kc-camp-picker')) {
+      closeCampaignPicker();
+      return;
+    }
+
+    const panel = document.createElement('div');
+    panel.id = 'kc-camp-picker';
+    panel.className = 'kc-camp-panel';
+    let dropIco = '';
+    try {
+      dropIco = chrome.runtime.getURL('icons/drop-24.png');
+    } catch (_) {}
+
+    panel.innerHTML =
+      '<div class="kc-camp-head" id="kc-camp-head">' +
+      (dropIco ? '<img class="kc-ico" src="' + dropIco + '" alt="">' : '') +
+      '<span class="kc-camp-title">Kampanyalar</span>' +
+      '<div class="kc-dhud-actions">' +
+      '<button type="button" class="kc-dhud-btn" data-camp-refresh title="Yenile">↻</button>' +
+      '<button type="button" class="kc-dhud-btn" data-camp-toggle title="Küçült">▾</button>' +
+      '<button type="button" class="kc-dhud-btn" data-camp-close title="Kapat">✕</button>' +
+      '</div></div>' +
+      '<div class="kc-camp-sub" id="kc-camp-count">0 seçili</div>' +
+      '<div class="kc-camp-body" id="kc-camp-body">' +
+      '<div class="kc-camp-toolbar">' +
+      '<input type="search" id="kc-camp-search" class="kc-camp-search" placeholder="Ara…" autocomplete="off" />' +
+      '<button type="button" class="kc-btn-sm" data-camp-all title="Tümünü seç">Tümü</button>' +
+      '<button type="button" class="kc-btn-sm" data-camp-none title="Seçimi temizle">Hiçbiri</button>' +
+      '</div>' +
+      '<div class="kc-camp-list" id="kc-camp-list"></div>' +
+      '<div class="kc-camp-foot">' +
+      '<button type="button" class="kc-btn kc-btn-primary" data-camp-done style="width:100%">Tamam</button>' +
+      '</div></div>';
+
+    document.documentElement.appendChild(panel);
+
+    // Position like Drops HUD (saved / default right side)
+    panel.style.position = 'fixed';
+    if (KC.applyPos) {
+      KC.applyPos(panel, 'pos_camp_picker', { x: 16, y: 360 });
+    } else {
+      const pos = KC.settings?.pos_camp_picker;
+      if (pos && pos.x != null) {
+        panel.style.left = pos.x + 'px';
+        panel.style.top = pos.y + 'px';
+        panel.style.right = 'auto';
+      } else {
+        panel.style.left = '16px';
+        panel.style.top = '360px';
+        panel.style.right = 'auto';
+      }
+    }
+    if (KC.makeDraggable) {
+      KC.makeDraggable(panel, panel.querySelector('#kc-camp-head'), 'pos_camp_picker');
+    } else {
+      // minimal drag fallback
+      const head = panel.querySelector('#kc-camp-head');
+      let drag = null;
+      head.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('button')) return;
+        drag = { x: e.clientX, y: e.clientY, l: panel.offsetLeft, t: panel.offsetTop };
+        head.setPointerCapture(e.pointerId);
+      });
+      head.addEventListener('pointermove', (e) => {
+        if (!drag) return;
+        panel.style.left = drag.l + (e.clientX - drag.x) + 'px';
+        panel.style.top = drag.t + (e.clientY - drag.y) + 'px';
+        panel.style.right = 'auto';
+      });
+      head.addEventListener('pointerup', () => {
+        if (!drag) return;
+        drag = null;
+        const r = panel.getBoundingClientRect();
+        try {
+          KC.saveSetting('pos_camp_picker', { x: r.left, y: r.top });
+        } catch (_) {}
+      });
+    }
+
+    function refreshCount() {
+      const el = document.getElementById('kc-camp-count');
+      const n = selectedIds().length;
+      if (el) {
+        el.textContent =
+          n === 0 ? 'Kampanya seçilmedi' : n + ' kampanya seçili · farm için işaretle';
+      }
+      updateSelSummary();
+    }
+
+    function setCollapsed(collapsed) {
+      panel.classList.toggle('kc-camp-collapsed', !!collapsed);
+      const btn = panel.querySelector('[data-camp-toggle]');
+      if (btn) btn.textContent = collapsed ? '▸' : '▾';
+      try {
+        KC.saveSetting('camp_picker_collapsed', !!collapsed);
+      } catch (_) {}
+    }
+
+    panel.addEventListener('click', (e) => {
+      const b = e.target.closest(
+        '[data-camp-close],[data-camp-refresh],[data-camp-done],[data-camp-all],[data-camp-none],[data-camp-toggle]'
+      );
+      if (!b) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (b.hasAttribute('data-camp-close') || b.hasAttribute('data-camp-done')) {
+        closeCampaignPicker();
+        updateSelSummary();
+      } else if (b.hasAttribute('data-camp-toggle')) {
+        setCollapsed(!panel.classList.contains('kc-camp-collapsed'));
+      } else if (b.hasAttribute('data-camp-refresh')) {
+        doRefreshCampaigns();
+        setTimeout(refreshCount, 400);
+      } else if (b.hasAttribute('data-camp-all')) {
+        const ids = campaigns
+          .filter((c) => isActiveCampaign(c) && !isCampaignFullyClaimed(c))
+          .map((c) => String(c.id));
+        KC.saveSetting('drops_selected', ids);
+        renderCampaignList();
+        refreshCount();
+      } else if (b.hasAttribute('data-camp-none')) {
+        KC.saveSetting('drops_selected', []);
+        renderCampaignList();
+        refreshCount();
+      }
+    });
+
+    const search = panel.querySelector('#kc-camp-search');
+    if (search) {
+      search.addEventListener('input', () => {
+        const q = (search.value || '').trim().toLowerCase();
+        panel.querySelectorAll('.kc-drops-item, .kc-camp-item').forEach((row) => {
+          const txt = (row.textContent || '').toLowerCase();
+          row.style.display = !q || txt.includes(q) ? '' : 'none';
+        });
+      });
+    }
+
+    panel.addEventListener('change', (e) => {
+      if (e.target && e.target.matches && e.target.matches('input[data-drop-id]')) {
+        refreshCount();
+      }
+    });
+
+    if (KC.settings?.camp_picker_collapsed) setCollapsed(true);
+
+    renderCampaignList();
+    refreshCount();
+    fetchCampaigns(true).then(() => {
+      renderCampaignList();
+      refreshCount();
+    });
+
+    try {
+      KC.saveSetting('camp_picker_open', true);
+    } catch (_) {}
+  }
+
+  try {
+    KC.openCampaignPicker = openCampaignPicker;
+  } catch (_) {}
 
   function ensurePanelSection() {
     const body = document.getElementById('kc-panel-body');
@@ -1708,15 +2557,15 @@
       '<div class="kc-drops-claim-status" id="kc-drops-claim-status">' +
       (lastClaimMsg || t('drops_claim_idle') || 'Claim bekleniyor…') +
       '</div>' +
-      '<div class="kc-drops-list" id="kc-drops-list"></div>' +
       '<div class="kc-drops-actions">' +
-      '<button type="button" class="kc-btn" id="kc-drops-refresh">' +
-      (t('drops_refresh') || 'Kampanyaları yenile') +
+      '<button type="button" class="kc-btn kc-btn-primary" id="kc-drops-open-picker">' +
+      (t('drops_pick_campaigns') || 'Kampanya seç') +
       '</button>' +
       '<button type="button" class="kc-btn" id="kc-drops-claim-now">' +
       (t('drops_claim_now') || 'Şimdi al') +
       '</button>' +
-      '</div>';
+      '</div>' +
+      '<div class="kc-drops-sel-summary" id="kc-drops-sel-summary"></div>';
 
     // Place after level section rows
     const labels = body.querySelectorAll('.kc-section-label');
@@ -1759,10 +2608,10 @@
         ensureDropsHud();
       });
     }
-    const ref = sec.querySelector('#kc-drops-refresh');
-    if (ref) {
-      ref.addEventListener('click', () => {
-        doRefreshCampaigns();
+    const openPick = sec.querySelector('#kc-drops-open-picker');
+    if (openPick) {
+      openPick.addEventListener('click', () => {
+        openCampaignPicker();
       });
     }
     const claimBtn = sec.querySelector('#kc-drops-claim-now');
@@ -1779,6 +2628,7 @@
       });
     }
     renderCampaignList();
+    updateSelSummary();
   }
 
   // Public API — level-bot checks shouldControl() before switching

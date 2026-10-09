@@ -144,12 +144,42 @@
       '<label class="kc-row"><span>' + t('drops_auto_claim') + '</span><input type="checkbox" data-key="drops_auto_claim"></label>' +
       '<label class="kc-row"><span>' + t('drops_hud') + '</span><input type="checkbox" data-key="drops_hud"></label>' +
       '<label class="kc-row"><span>' + t('level_bot') + '</span><input type="checkbox" data-key="level_bot"></label>' +
+      '<div class="kc-row kc-row-select"><span>' + t('min_viewers') + '<span class="kc-row-hint">Düşük izleyicili yayınları atla</span></span>' +
+      '<select id="kc-min-viewers" data-key="min_viewers">' +
+      '<option value="0">Hepsi</option>' +
+      '<option value="5">5+</option>' +
+      '<option value="10">10+</option>' +
+      '<option value="25">25+</option>' +
+      '<option value="50">50+</option>' +
+      '<option value="100">100+</option>' +
+      '<option value="250">250+</option>' +
+      '<option value="500">500+</option>' +
+      '</select></div>' +
       '<label class="kc-row"><span>' + t('anti_stuck') + '</span><input type="checkbox" data-key="anti_stuck"></label>' +
       '<label class="kc-row"><span>' + t('bg_watch') + '</span><input type="checkbox" data-key="bg_watch"></label>' +
       '<label class="kc-row"><span>Takılma onarıcı<span class="kc-row-hint">Yayın donarsa (pencere küçülünce) otomatik düzeltir</span></span><input type="checkbox" data-key="stall_guard"></label>' +
-      '<label class="kc-row"><span>Tanı bilgisi göster<span class="kc-row-hint">Donma anında video durumunu ekranda gösterir</span></span><input type="checkbox" data-key="stall_debug"></label>' +
+      '<label class="kc-row"><span>Yayın durumu<span class="kc-row-hint">Sağ altta sade durum kutusu (akıyor / takılı)</span></span><input type="checkbox" data-key="stall_debug"></label>' +
       '<div class="kc-row"><span>Yayını şimdi düzelt</span><button type="button" class="kc-btn-sm" id="kc-fix-now">Düzelt</button></div>' +
+      '<div class="kc-row"><span>' + t('next_stream') + '<span class="kc-row-hint">Level bot canlı listesinden sıradaki</span></span>' +
+      '<button type="button" class="kc-btn-sm" id="kc-next-stream">Geç</button></div>' +
       '<label class="kc-row"><span>160p (düşük kalite)</span><input type="checkbox" data-key="quality_160"></label>' +
+      '<div class="kc-row kc-row-select"><span>Yayın filtresi<span class="kc-row-hint">Sadece CSS · kasma yapmaz · drop/level devam eder</span></span>' +
+      '<select id="kc-video-filter" data-key="video_filter">' +
+      '<option value="off">Kapalı</option>' +
+      '<option value="vivid">Canlı renk</option>' +
+      '<option value="vivid_plus">Canlı+</option>' +
+      '<option value="crisp">Net / keskin</option>' +
+      '<option value="cinema">Sinema</option>' +
+      '<option value="warm">Sıcak</option>' +
+      '<option value="cool">Soğuk</option>' +
+      '<option value="neon">Neon</option>' +
+      '<option value="retro">Retro</option>' +
+      '<option value="soft">Yumuşak</option>' +
+      '<option value="dim">Karart</option>' +
+      '<option value="dark">Çok karanlık</option>' +
+      '<option value="gray">Gri</option>' +
+      '<option value="hide">Gizle</option>' +
+      '</select></div>' +
       '</div>' +
 '<div class="kc-opacity-row">' +
       '<div class="kc-opacity-top"><span>Boştaki saydamlık<span class="kc-row-hint">Fare üstünde değilken menüler bu kadar görünür</span></span><b id="kc-idle-op-val">60%</b></div>' +
@@ -255,6 +285,47 @@
     });
 
 
+
+    // ── Min viewers (level bot) ──
+    (function bindMinViewers() {
+      const sel = document.getElementById('kc-min-viewers');
+      if (!sel) return;
+      const allowed = [0, 5, 10, 25, 50, 100, 250, 500];
+      let m = parseInt(KC.settings.min_viewers, 10);
+      if (!allowed.includes(m)) m = 10;
+      sel.value = String(m);
+      sel.addEventListener('change', () => {
+        const v = parseInt(sel.value, 10) || 0;
+        KC.saveSetting('min_viewers', v);
+      });
+      KC.on('setting:min_viewers', (v) => {
+        const n = parseInt(v, 10);
+        if (allowed.includes(n)) sel.value = String(n);
+      });
+    })();
+
+    // ── Yayın görsel filtresi ──
+    (function bindVideoFilter() {
+      const sel = document.getElementById('kc-video-filter');
+      if (!sel) return;
+      const allowed = ['off', 'vivid', 'vivid_plus', 'crisp', 'cinema', 'warm', 'cool', 'neon', 'retro', 'soft', 'dim', 'dark', 'gray', 'hide'];
+      let m = String(KC.settings.video_filter || 'off').toLowerCase();
+      if (!allowed.includes(m)) m = 'off';
+      sel.value = m;
+      sel.addEventListener('change', () => {
+        const v = sel.value || 'off';
+        KC.saveSetting('video_filter', v);
+        try {
+          if (KC.applyVideoFilter) KC.applyVideoFilter();
+        } catch (_) {}
+      });
+      KC.on('setting:video_filter', (v) => {
+        const nv = String(v || 'off').toLowerCase();
+        if (sel.value !== nv && allowed.includes(nv)) sel.value = nv;
+      });
+    })();
+
+
     // ── Boştaki saydamlık ayarı ──
     function applyIdleOpacity(v) {
       let n = parseInt(v, 10);
@@ -284,6 +355,21 @@
 
     document.getElementById('kc-fix-now')?.addEventListener('click', () => {
       if (KC.fixStreamNow) KC.fixStreamNow();
+    });
+    document.getElementById('kc-next-stream')?.addEventListener('click', () => {
+      try {
+        if (typeof KC.forceNextStream === 'function') {
+          Promise.resolve(KC.forceNextStream('manual-panel')).catch((e) =>
+            console.warn('[KC] next stream', e)
+          );
+        } else if (typeof KC.forceSwitchChannel === 'function') {
+          KC.forceSwitchChannel();
+        } else {
+          console.warn('[KC] next stream API yok');
+        }
+      } catch (e) {
+        console.warn('[KC] next stream', e);
+      }
     });
 
     document.getElementById('kc-drops-refresh')?.addEventListener('click', () => {

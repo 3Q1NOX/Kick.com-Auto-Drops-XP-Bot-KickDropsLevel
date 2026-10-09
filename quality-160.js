@@ -18,6 +18,17 @@
         new CustomEvent('kc:quality', { detail: { enabled: true, height: 160, pref: '160' } })
       );
     } catch (_) {}
+    try {
+      window.postMessage(
+        { source: 'kickcontrol-quality', maxHeight: 160, pref: '160' },
+        '*'
+      );
+    } catch (_) {}
+    try {
+      const bc = new BroadcastChannel('kc-smart1080');
+      bc.postMessage({ enabled: true, maxHeight: 160 });
+      try { bc.close(); } catch (_) {}
+    } catch (_) {}
   }
 
   function pickLowestFromMenu() {
@@ -38,7 +49,6 @@
           best = el;
         }
       }
-      // Prefer exact 160 if present
       for (const el of items) {
         const txt = (el.textContent || '').trim();
         if (/\b160\s*p?\b/i.test(txt)) {
@@ -58,19 +68,16 @@
   function tryOpenSettingsAndPick() {
     if (!enabled()) return;
     applyViaStorage();
-    // Only try UI path occasionally
     try {
       const video =
         document.getElementById('video-player') ||
         document.querySelector('video');
       if (!video) return;
-      // Look for quality already set via player internals
       const cog =
         document.querySelector('.z-controls button[aria-haspopup="menu"]') ||
         document.querySelector('button[aria-label="Settings"]') ||
         document.querySelector('button[aria-label="settings"]');
       if (!cog) return;
-      // Don't spam-click every tick — only if not recently applied
       if (tryOpenSettingsAndPick._busy) return;
       tryOpenSettingsAndPick._busy = true;
       setTimeout(() => {
@@ -90,10 +97,27 @@
     timer = setInterval(() => {
       if (!enabled()) return;
       applyViaStorage();
-      // soft attempt
       pickLowestFromMenu();
     }, 12000);
     setTimeout(tryOpenSettingsAndPick, 3000);
+  }
+
+  function stop() {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+    try {
+      window.postMessage(
+        { source: 'kickcontrol-quality', maxHeight: null, pref: 'auto' },
+        '*'
+      );
+    } catch (_) {}
+    try {
+      const bc = new BroadcastChannel('kc-smart1080');
+      bc.postMessage({ enabled: false, maxHeight: null });
+      try { bc.close(); } catch (_) {}
+    } catch (_) {}
   }
 
   KC.settingsReady.then(() => {
@@ -101,9 +125,6 @@
   });
   KC.on('setting:quality_160', (on) => {
     if (on) start();
-    else if (timer) {
-      clearInterval(timer);
-      timer = null;
-    }
+    else stop();
   });
 })();

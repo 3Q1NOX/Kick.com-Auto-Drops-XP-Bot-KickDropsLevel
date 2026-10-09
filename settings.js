@@ -18,9 +18,12 @@
     panel_opacity: 95,
     idle_opacity: 60,
     hud_compact: false,
-    quality_160: false,
+    quality_160: false, // legacy — migrated to stream_quality
+    stream_quality: 'auto', // auto | 160 | 360 | 480 | 720 | 1080
+    video_filter: 'off', // off | dim | dark | gray | hide
     stall_guard: true,
     stall_debug: false,
+    min_viewers: 10, // level bot: min izleyici (0=hepsi)
     switch_log: [],
     switch_log_max: 10,
     switch_log_open: false,
