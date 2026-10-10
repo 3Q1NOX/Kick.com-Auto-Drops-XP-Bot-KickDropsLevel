@@ -24,6 +24,8 @@
 
 </div>
 
+<a href="https://imgbb.com/"><img src="https://i.ibb.co/WW8pMzGn/image.png" alt="image" border="0"></a>  <a href="https://ibb.co/x8w5VHRj"><img src="https://i.ibb.co/Wp7KStYy/image.png" alt="image" border="0"></a>
+
 ## 🇹🇷 Türkçe
 
 Bu eklenti, Kick.com üzerinde gereksiz sistem kaynakları harcayan tüm ekstra özellikleri (reklam engelleyici, sohbet araçları, çoklu yayın, mod günlüğü, tiyatro modu, kayıtçı vb.) temizleyerek **yalnızca otomatik Drop toplama** ve **Level (XP) kazanma** süreçlerine odaklanmış hafif ve hızlı bir uzantıdır.
@@ -106,4 +108,4 @@ This extension is a lightweight and fast browser add-on focused **solely on auto
 
 > ⚠️ **Disclaimer:** This is an unofficial third-party tool. Use at your own risk; any usage violating Kick Terms of Service (ToS) is entirely the user's responsibility.
 
-<a href="https://ibb.co/k2nnpWcr"><img src="https://i.ibb.co/QvBBZ1mq/image.png" alt="image" border="0"></a>
+
