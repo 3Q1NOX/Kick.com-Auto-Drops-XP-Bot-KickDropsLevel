@@ -1,5 +1,5 @@
 (function () {
-  console.log('[Kick Drops & Level] v1.0.46 loaded');
+  console.log('[Kick Drops & Level] v1.0.50 loaded');
   try {
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg?.type === 'kc:keepalive') {

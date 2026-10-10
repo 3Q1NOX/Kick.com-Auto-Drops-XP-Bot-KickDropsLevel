@@ -1773,20 +1773,10 @@
       const statusLine = S ? S.status : L && L.status;
       const healthClass = S ? S.statusClass : L && L.healthClass;
       const slug = (S && S.channel) || (L && L.slug) || '—';
-      const nowDoing =
-        (L && L.nowDoing) ||
-        (typeof KC.getDropsNowDoing === 'function' && KC.getDropsNowDoing()) ||
-        (L && L.status) ||
-        '—';
-      // Şu an: kısa "Akıyor · kanal" — Kanal satırı yok (zaten şu an'da)
+      // Şu an satırı kaldırıldı (kullanıcı isteği)
       levelHtml =
         '<div class="kc-combined-level">' +
         '<div class="kc-combined-level-head">Level</div>' +
-        '<div class="kc-combined-now" title="Anlık durum">' +
-        '<span class="kc-now-label">Şu an</span>' +
-        '<span class="kc-now-text">' +
-        esc(nowDoing) +
-        '</span></div>' +
         '<div class="kc-lhud-grid">' +
         '<div class="kc-lhud-row"><span class="k">Durum</span><span class="v ' +
         esc(healthClass || '') +
@@ -1794,17 +1784,15 @@
         esc(statusLine || (L && L.health) || '—') +
         '</span></div>';
       if (S) {
-        const bufBad = S.buffer === 'Az' || S.buffer === 'Yok';
         const isStuck =
           S.statusClass === 'bad' ||
           S.statusClass === 'warn' ||
           (S.status && /takıl|yüklen|durak/i.test(S.status));
-        if (bufBad) {
-          levelHtml +=
-            '<div class="kc-lhud-row"><span class="k">Tampon</span><span class="v">' +
-            esc(S.buffer + (S.bufferSec ? ' · ' + S.bufferSec : '')) +
-            '</span></div>';
-        }
+        // Tampon her zaman görünsün
+        levelHtml +=
+          '<div class="kc-lhud-row"><span class="k">Tampon</span><span class="v">' +
+          esc((S.buffer || '—') + (S.bufferSec ? ' · ' + S.bufferSec : '')) +
+          '</span></div>';
         if (isStuck && S.next && S.next !== '—' && S.next !== 'İzleniyor') {
           levelHtml +=
             '<div class="kc-lhud-row"><span class="k">Sıradaki</span><span class="v">' +
@@ -2426,24 +2414,24 @@
       }
 
       hud.addEventListener('click', (e) => {
-        const t = e.target.closest(
+        const btn = e.target.closest(
           '[data-dhud-toggle],[data-dhud-refresh],[data-dhud-hide],[data-dhud-compact],[data-dhud-log],[data-dhud-next],[data-dhud-camps]'
         );
-        if (!t) return;
+        if (!btn) return;
         e.preventDefault();
         e.stopPropagation();
-        if (t.hasAttribute('data-dhud-toggle')) {
+        if (btn.hasAttribute('data-dhud-toggle')) {
           setHudCollapsed(!hud.classList.contains('kc-dhud-collapsed'));
-        } else if (t.hasAttribute('data-dhud-compact')) {
+        } else if (btn.hasAttribute('data-dhud-compact')) {
           const next = !KC.settings?.hud_compact;
           KC.saveSetting('hud_compact', next);
           renderDropsHud();
-        } else if (t.hasAttribute('data-dhud-log')) {
+        } else if (btn.hasAttribute('data-dhud-log')) {
           showSwitchLogPanel();
-        } else if (t.hasAttribute('data-dhud-refresh')) {
+        } else if (btn.hasAttribute('data-dhud-refresh')) {
           pollAndClaim().catch(() => {});
           doRefreshCampaigns();
-        } else if (t.hasAttribute('data-dhud-next')) {
+        } else if (btn.hasAttribute('data-dhud-next')) {
           try {
             setStatus((t('next_stream') || 'Sonraki yayına geç') + '…');
             if (typeof KC.forceNextStream === 'function') {
@@ -2458,9 +2446,9 @@
           } catch (err) {
             console.warn('[KC] next stream', err);
           }
-        } else if (t.hasAttribute('data-dhud-camps')) {
+        } else if (btn.hasAttribute('data-dhud-camps')) {
           openCampaignPicker();
-        } else if (t.hasAttribute('data-dhud-hide')) {
+        } else if (btn.hasAttribute('data-dhud-hide')) {
           // HUD kalıcı — sadece küçült
           setHudCollapsed(true);
         }

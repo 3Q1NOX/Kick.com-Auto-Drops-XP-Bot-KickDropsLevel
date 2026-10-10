@@ -29,7 +29,10 @@
     switch_log_open: false,
     switch_log_collapsed: false,
     pos_switch_log: null,
-    terms_accepted: false
+    terms_accepted: false,
+    level_xp_hud: true,
+    level_xp_hud_mini: false,
+    pos_level_xp_hud: null
   };
   KC.settings = { ...DEFAULTS };
   KC._handlers = {};

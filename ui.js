@@ -141,28 +141,34 @@
       '<div class="kc-float-body" id="kc-float-body">' +
 
       '<div class="kc-sec">Drops</div>' +
+      '<div class="kc-group">' +
       '<div class="kc-grid2">' +
       '<label class="kc-row" title="Drop farm"><span>Drops Farm</span><input type="checkbox" data-key="drops_enabled"></label>' +
       '<label class="kc-row" title="Otomatik claim"><span>Oto claim</span><input type="checkbox" data-key="drops_auto_claim"></label>' +
       '<label class="kc-row" title="İlerleme HUD"><span>HUD</span><input type="checkbox" data-key="drops_hud"></label>' +
       '<label class="kc-row" title="Level bot"><span>Level Bot</span><input type="checkbox" data-key="level_bot"></label>' +
       '<label class="kc-row" title="Kompakt HUD"><span>Kompakt</span><input type="checkbox" data-key="hud_compact"></label>' +
+      '<label class="kc-row" title="Level XP paneli (F9)"><span>Level XP</span><input type="checkbox" data-key="level_xp_hud"></label>' +
       '</div>' +
       '<div class="kc-actions-row">' +
       '<button type="button" class="kc-btn-sm" id="kc-open-camps" title="Kampanya seç">Kampanya</button>' +
       '<button type="button" class="kc-btn-sm" id="kc-claim-now" title="Ödülleri şimdi al">Claim</button>' +
       '<button type="button" class="kc-btn-sm" id="kc-open-log" title="Geçiş logu">Log</button>' +
       '</div>' +
+      '</div>' +
 
       '<div class="kc-sec">Koruma</div>' +
+      '<div class="kc-group">' +
       '<div class="kc-grid2">' +
       '<label class="kc-row" title="Anti-stuck"><span>Anti-stuck</span><input type="checkbox" data-key="anti_stuck"></label>' +
       '<label class="kc-row" title="Sekmeyi aktif tut"><span>Aktif tut</span><input type="checkbox" data-key="bg_watch"></label>' +
       '<label class="kc-row" title="Takılma onarıcı"><span>Onarıcı</span><input type="checkbox" data-key="stall_guard"></label>' +
       '<label class="kc-row" title="Yayın durumu kutusu"><span>Durum</span><input type="checkbox" data-key="stall_debug"></label>' +
       '</div>' +
+      '</div>' +
 
       '<div class="kc-sec">Ayarlar</div>' +
+      '<div class="kc-group">' +
       '<div class="kc-row kc-row-select" title="Min. izleyici">' +
       '<span>Min. izleyici</span>' +
       '<select id="kc-min-viewers" data-key="min_viewers">' +
@@ -181,10 +187,10 @@
       '<option value="hide">Gizle</option>' +
       '</select></div>' +
       '<label class="kc-row" title="160p düşük kalite"><span>160p</span><input type="checkbox" data-key="quality_160"></label>' +
-
       '<div class="kc-actions-row">' +
       '<button type="button" class="kc-btn-sm" id="kc-fix-now" title="Yayını şimdi düzelt">Düzelt</button>' +
       '<button type="button" class="kc-btn-sm" id="kc-next-stream" title="Sonraki yayına geç">Sonraki</button>' +
+      '</div>' +
       '</div>' +
 
       '<div class="kc-opacity-row">' +
@@ -264,7 +270,7 @@
 
     root.querySelectorAll('input[data-key]').forEach((input) => {
       const key = input.getAttribute('data-key');
-      if (key === 'drops_auto_claim' || key === 'drops_hud' || key === 'stall_guard') {
+      if (key === 'drops_auto_claim' || key === 'drops_hud' || key === 'stall_guard' || key === 'level_xp_hud') {
         input.checked = KC.settings[key] !== false;
       } else {
         input.checked = !!KC.settings[key];
@@ -273,7 +279,7 @@
         KC.saveSetting(key, input.checked);
       });
       KC.on('setting:' + key, (v) => {
-        if (key === 'drops_auto_claim' || key === 'drops_hud' || key === 'stall_guard') {
+        if (key === 'drops_auto_claim' || key === 'drops_hud' || key === 'stall_guard' || key === 'level_xp_hud') {
           input.checked = v !== false;
         } else {
           input.checked = !!v;

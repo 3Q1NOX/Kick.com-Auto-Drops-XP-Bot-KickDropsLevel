@@ -124,6 +124,43 @@
     return false;
   }
 
+  function dismissChatRules() {
+    try {
+      // Kick sohbet kuralları / chat rules modal — yayını engelliyor
+      const texts = [
+        "Kabul ediyorum",
+        "I accept",
+        "Accept",
+        "Agree",
+        "Kabul Et",
+        "Anladım"
+      ];
+      const buttons = document.querySelectorAll("button, [role=\"button\"]");
+      for (const b of buttons) {
+        const t = (b.textContent || "").trim();
+        if (!t) continue;
+        if (texts.some((x) => t === x || t.toLowerCase() === x.toLowerCase())) {
+          // Sadece sohbet kuralları bağlamında tıkla
+          const root = b.closest("[class*=\"modal\"], [class*=\"dialog\"], [class*=\"overlay\"], [role=\"dialog\"], div");
+          const body = (root && root.textContent) || "";
+          if (
+            /sohbet\s*kurall|chat\s*rules|community\s*guidelines|be\s*respectful|respetuoso|toxique|friendlys|No Toxiquear/i.test(
+              body
+            )
+          ) {
+            b.click();
+            return true;
+          }
+        }
+      }
+      // Alternatif: yeşil büyük buton + kurallar metni
+      const green = document.querySelector(
+        "button[style*=\"background\"], button.bg-green, [class*=\"green\"] button"
+      );
+    } catch (_) {}
+    return false;
+  }
+
   function hardReplay(v) {
     try {
       try { v.playbackRate = 1; } catch (_) {}
@@ -384,6 +421,7 @@
   }
 
   function tick() {
+    dismissChatRules();
     const v = getVideo();
     if (KC.settings?.stall_debug) updateDebug(v, Date.now() - lastProgressAt);
     else if (dbgEl) updateDebug(null, 0);
