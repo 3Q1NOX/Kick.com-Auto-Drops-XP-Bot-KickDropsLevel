@@ -1,0 +1,48 @@
+/* Popup — Dear ImGui teması */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  width: 300px;
+  font-family: "Segoe UI", Inter, system-ui, sans-serif;
+  background: #171a26;
+  color: #ebedf7;
+  font-size: 13px;
+}
+.wrap { padding: 0 0 10px; }
+header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px;
+  background: #5a4fa8;
+  border-bottom: 1px solid rgba(77,82,128,.65);
+}
+header img { width: 20px; height: 20px; }
+h1 { font-size: 13px; color: #fff; font-weight: 600; flex: 1; }
+.ver { font-size: 11px; color: #d6d2f5; }
+section { margin: 8px 10px 0; }
+h2 {
+  font-size: 11px; font-weight: 600; letter-spacing: .04em;
+  color: #fff; background: #5a4fa8;
+  padding: 4px 8px; border-radius: 3px; margin-bottom: 4px;
+}
+h2:hover { background: #6b5cc7; }
+label {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 8px; cursor: pointer; color: #ebedf7; border-radius: 3px;
+}
+label:hover { background: #313757; }
+input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none;
+  width: 16px; height: 16px; cursor: pointer; position: relative;
+  background: #262b40; border: 1px solid rgba(77,82,128,.65); border-radius: 3px;
+}
+input[type="checkbox"]:hover { background: #313757; }
+input[type="checkbox"]:checked::after {
+  content: ""; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px;
+  border: solid #d6d8f2; border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.hint {
+  font-size: 11.5px; line-height: 1.45; color: #8a8fa8;
+  margin: 10px 10px 0; padding: 8px 10px;
+  background: #1c1f2e; border: 1px solid rgba(77,82,128,.65); border-radius: 4px;
+}
+.hint strong { color: #ebedf7; }
+.disclaimer { margin-top: 10px; font-size: 10px; color: #6a7090; text-align: center; }

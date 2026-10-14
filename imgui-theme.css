@@ -1,0 +1,1247 @@
+
+/* Auxiliary panels inherit theme from body[data-kc-theme] so all windows share one theme */
+#kc-drops-hud, #kc-camp-picker, #kc-switch-log, #kc-level-hud, #kc-stall-debug, #kc-lx-card {
+  /* vars resolved from :root / #kc-dl-float[data-theme] / body[data-kc-theme] cascade */
+}
+/* ============================================================================
+   Kick Drops & Level — REAL Dear ImGui theme (Dark)
+   Loads AFTER content.css so it overrides legacy UI rules.
+
+   Palet, Dear ImGui resmi `Dark` stilinden alınmıştır:
+   https://github.com/ocornut/imgui/blob/master/imgui.cpp#StyleColorsDark()
+   ============================================================================ */
+
+
+
+/* ============================================================================
+   0) STRUCTURAL — position, z-index, sizing, scroll (from legacy content.css)
+   ============================================================================ */
+
+/* Main window — fixed, high stacking, viewport-clamped */
+#kc-dl-float {
+  position: fixed !important;
+  z-index: 2147483000 !important;
+  pointer-events: auto !important;
+  overflow: visible;
+  box-sizing: border-box;
+}
+#kc-dl-float.is-collapsed { overflow: visible; }
+
+/* Floating menu button */
+#kc-menu-btn {
+  position: fixed !important;
+  z-index: 2147483001 !important;
+  pointer-events: auto !important;
+}
+
+/* Auxiliary panels — same stacking layer */
+#kc-drops-hud,
+#kc-camp-picker,
+#kc-switch-log,
+#kc-level-hud,
+#kc-stall-debug,
+#kc-lx-card {
+  position: fixed !important;
+  z-index: 2147482900 !important;
+  pointer-events: auto !important;
+  box-sizing: border-box;
+}
+
+/* Toasts */
+#kc-refresh-toast,
+#kc-drops-claim-toast,
+#kc-stall-toast {
+  position: fixed;
+  z-index: 2147483100;
+}
+
+/* Terms modal — full-screen centered overlay */
+#kc-dl-terms {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483640;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  box-sizing: border-box;
+}
+#kc-dl-terms .kc-terms-card {
+  max-width: 420px !important;
+  padding: 20px !important;
+  box-sizing: border-box;
+}
+#kc-dl-terms .kc-terms-actions {
+  display: flex;
+  gap: 8px;
+}
+/* Terms modal buttons — ImGui Button (square, dark gray, accent hover) */
+#kc-dl-terms .kc-btn-primary,
+#kc-dl-terms .kc-btn-ghost {
+  background: var(--im-btn) !important;
+  color: var(--im-text) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: 0 !important;
+  padding: 6px 14px !important;
+  font-family: var(--im-font) !important;
+  font-size: 12.5px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
+  transition: background 0.06s ease, border-color 0.06s ease;
+  box-sizing: border-box;
+  min-height: 24px;
+}
+#kc-dl-terms .kc-btn-primary:hover,
+#kc-dl-terms .kc-btn-ghost:hover {
+  background: var(--im-btn-hov) !important;
+  border-color: var(--im-accent) !important;
+  color: #fff !important;
+}
+#kc-dl-terms .kc-btn-primary:active { background: var(--im-btn-act) !important; }
+
+/* Level HUD head — legacy structural fixups (keep position) */
+#kc-level-hud .kc-lhud-head {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 6px 8px !important;
+  min-height: 28px;
+  box-sizing: border-box;
+}
+#kc-level-hud .kc-lhud-title { flex: 0 0 auto !important; margin-right: 4px; }
+#kc-level-hud .kc-lhud-status {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+/* Level HUD row — label + value with proper spacing */
+#kc-level-hud .kc-lhud-row,
+.kc-lhud-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+#kc-level-hud .kc-lhud-row .k,
+.kc-lhud-row .k { flex: 0 0 auto; }
+#kc-level-hud .kc-lhud-row .v,
+.kc-lhud-row .v { flex: 1 1 auto; text-align: right; }
+
+/* Level HUD flags — inline chips */
+.kc-lhud-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.kc-lhud-flags button { font-size: 11px !important; padding: 2px 6px !important; }
+
+/* Level HUD row spacing */
+#kc-level-hud .kc-lhud-row + .kc-lhud-row { margin-top: 1px; }
+
+
+/* ============================================================================
+   0b) IMGUI-STYLE TRANSPARENCY — all windows semi-transparent
+   (matches ImGui WindowBg alpha ~0.94, so background stream shows through)
+   ============================================================================ */
+
+/* Main + auxiliary windows — semi-transparent background */
+#kc-dl-float,
+#kc-drops-hud,
+#kc-camp-picker,
+#kc-switch-log,
+#kc-level-hud,
+#kc-stall-debug,
+#kc-lx-card,
+.kc-terms-card,
+.kc-prog-card,
+.kc-lx-box {
+  background: var(--im-window-bg) !important;
+  /* Do NOT use whole-panel opacity — it would fade text too */
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+/* Body of windows — slightly more transparent */
+#kc-dl-float .kc-float-body,
+#kc-drops-hud .kc-dhud-body,
+#kc-camp-picker .kc-camp-body,
+#kc-switch-log .kc-slog-body,
+#kc-level-hud .kc-lhud-body {
+  background: transparent !important;
+}
+
+/* Title bars — semi-transparent */
+#kc-dl-float .kc-float-head,
+#kc-drops-hud .kc-dhud-head,
+#kc-camp-picker .kc-camp-head,
+#kc-switch-log .kc-slog-head,
+#kc-level-hud .kc-lhud-head,
+#kc-stall-debug .kc-sd-head {
+  background: var(--im-title-act) !important;
+}
+
+/* Popup / Toast — semi-transparent */
+#kc-refresh-toast,
+#kc-drops-claim-toast,
+#kc-stall-toast {
+  background: var(--im-popup-bg) !important;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+/* ============================================================================
+   0c) TEXT SPACING FIXES — prevent label collisions
+   ============================================================================ */
+
+/* Drops HUD: label (left) vs value (right) with proper gap */
+.kc-lhud-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 3px 8px !important;
+  margin: 0 !important;
+}
+.kc-lhud-row .k {
+  flex: 0 0 auto !important;
+  margin-right: 4px !important;
+}
+.kc-lhud-row .v {
+  flex: 1 1 auto !important;
+  text-align: right !important;
+  white-space: nowrap;
+}
+
+/* Campaign list header: title + counter with proper gap */
+.kc-inline-camps-head {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin-bottom: 4px !important;
+}
+.kc-inline-camps-head > span:first-child {
+  flex: 0 0 auto !important;
+  margin-right: 8px !important;
+}
+.kc-inline-camps-count {
+  margin-left: auto !important;
+  margin-right: 8px !important;
+}
+
+/* Campaign card: name + badge with proper gap */
+.kc-drops-top {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  flex-wrap: wrap !important;
+}
+.kc-drops-name {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 6px !important;
+}
+.kc-drops-badge {
+  flex: 0 0 auto !important;
+  margin-left: auto !important;
+}
+
+/* Category line */
+.kc-drops-cat {
+  display: block !important;
+  margin-top: 2px !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Summary (0/1 selected etc.) */
+.kc-drops-summary {
+  display: block !important;
+  margin-top: 2px !important;
+}
+
+/* Reward list items: proper gap between name and pct */
+.kc-drops-reward-head {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+.kc-drops-reward-name {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 6px !important;
+}
+.kc-drops-reward-pct {
+  flex: 0 0 auto !important;
+}
+
+/* Reward bar row: track + time label with proper gap */
+.kc-drops-reward-bar {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  margin-top: 3px !important;
+}
+.kc-drops-prog-track {
+  flex: 1 1 auto !important;
+}
+.kc-drops-reward-time {
+  flex: 0 0 auto !important;
+  white-space: nowrap;
+}
+
+/* Campaign picker — full list item spacing */
+.kc-camp-item,
+.kc-camp-row {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 8px !important;
+  padding: 6px 8px !important;
+}
+
+/* Level HUD flags row: proper spacing */
+.kc-lhud-flags {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 4px !important;
+  margin-top: 4px !important;
+}
+
+/* Theme message (error/success) */
+.kc-theme-msg {
+  font-size: 11px !important;
+  color: var(--im-text-dis) !important;
+  padding: 4px 8px !important;
+  margin-top: 4px !important;
+  min-height: 16px;
+}
+.kc-theme-msg.is-err {
+  color: var(--im-bad, #ee6b78) !important;
+}
+
+
+/* Idle opacity section — proper layout for label + slider */
+#kc-dl-float .kc-opacity-row { padding: 4px 8px !important; }
+#kc-dl-float .kc-opacity-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+#kc-dl-float .kc-opacity-top span { flex: 0 0 auto; }
+#kc-dl-float .kc-opacity-top b {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-weight: 500;
+  color: var(--im-text) !important;
+}
+#kc-dl-float #kc-idle-op { width: calc(100% - 16px); margin: 0 8px !important; }
+
+/* ============================================================================
+   1) MAIN PANELS — window-like look
+   ============================================================================ */
+#kc-dl-float,
+#kc-drops-hud,
+#kc-camp-picker,
+#kc-switch-log,
+#kc-level-hud,
+#kc-stall-debug,
+#kc-lx-card,
+.kc-terms-card,
+.kc-prog-card,
+.kc-lx-box {
+  --kc-bg:          var(--im-window-bg) !important;
+  --kc-bg2:         var(--im-frame-bg) !important;
+  --kc-border:      var(--im-border) !important;
+  --kc-head:        var(--im-title-act) !important;
+  --kc-text:        var(--im-text) !important;
+  --kc-muted:       var(--im-text-dis) !important;
+  --kc-accent:      var(--im-accent) !important;
+  --kc-accent-soft: rgba(66, 152, 249, 0.18) !important;
+  --kc-group:       var(--im-menubar-bg) !important;
+  --kc-input-bg:    var(--im-frame-bg) !important;
+
+  background: var(--im-window-bg) !important;
+  color: var(--im-text) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: 0 !important;                       /* ImGui: square */
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45) !important;
+  font-family: var(--im-font) !important;
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+  letter-spacing: 0.01em !important;
+  -webkit-font-smoothing: antialiased !important;
+}
+
+/* Collapsed state — hide body, keep button */
+#kc-dl-float.is-collapsed {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  width: 36px !important;
+  height: 36px !important;
+  overflow: visible !important;
+}
+#kc-dl-float.is-collapsed .kc-float-head,
+#kc-dl-float.is-collapsed .kc-float-body { display: none !important; }
+#kc-dl-float.is-collapsed .kc-float-logo {
+  display: block !important;
+  width: 36px !important;
+  height: 36px !important;
+  background: var(--im-frame-bg) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: 0 !important;
+  color: var(--im-text) !important;
+  align-items: center;
+  justify-content: center;
+}
+#kc-dl-float.is-collapsed .kc-float-logo:hover { background: var(--im-frame-hov) !important; }
+#kc-dl-float.is-collapsed .kc-float-logo:active { background: var(--im-frame-act) !important; }
+
+/* ============================================================================
+   2) TITLE BARS (ImGui TitleBg / TitleBgActive)
+   ============================================================================ */
+#kc-dl-float .kc-float-head,
+#kc-drops-hud .kc-dhud-head,
+#kc-camp-picker .kc-camp-head,
+#kc-switch-log .kc-slog-head,
+#kc-level-hud .kc-lhud-head,
+#kc-stall-debug .kc-sd-head {
+  background: var(--im-title-act) !important;
+  border-bottom: 1px solid var(--im-border) !important;
+  border-radius: var(--im-radius, 0) 0 0 0 !important;
+  padding: 6px 8px !important;
+  margin: 0 !important;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  min-height: 26px !important;
+  box-sizing: border-box;
+}
+#kc-dl-float .kc-float-head:active { cursor: grabbing; }
+
+/* Title text — ImGui uses bold-ish white, no uppercase */
+#kc-dl-float .kc-float-title,
+#kc-drops-hud .kc-dhud-title,
+#kc-camp-picker .kc-camp-title,
+#kc-switch-log .kc-slog-title,
+#kc-level-hud .kc-lhud-title,
+#kc-stall-debug .kc-sd-title {
+  color: #fff !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  letter-spacing: 0.02em !important;
+  text-transform: none !important;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Title-bar buttons (ImGui collapse / close) */
+#kc-dl-float .kc-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0 !important;
+  background: transparent !important;
+  color: var(--im-text) !important;
+  border: 1px solid transparent !important;
+  border-radius: 0 !important;
+  font-size: 11px !important;
+  cursor: pointer !important;
+  transition: background 0.06s ease, color 0.06s ease;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#kc-dl-float .kc-icon-btn:hover {
+  background: var(--im-frame-hov) !important;
+  color: #fff !important;
+  border-color: var(--im-border) !important;
+}
+#kc-dl-float .kc-icon-btn:active { background: var(--im-frame-act) !important; }
+
+/* Window-collapsed (ImGui Collapsed window: title bar visible, body hidden) */
+#kc-dl-float.is-win-collapsed {
+  width: auto !important;
+  min-width: 160px !important;
+  max-width: 340px !important;
+}
+#kc-dl-float.is-win-collapsed .kc-float-body { display: none !important; }
+#kc-dl-float.is-win-collapsed .kc-float-head { cursor: grab; }
+
+/* Body — ImGui WindowPadding (8px) */
+#kc-dl-float .kc-float-body,
+#kc-drops-hud .kc-dhud-body,
+#kc-camp-picker .kc-camp-body,
+#kc-switch-log .kc-slog-body,
+#kc-level-hud .kc-lhud-body {
+  background: var(--im-window-bg) !important;
+  padding: 8px !important;
+  box-sizing: border-box;
+}
+
+/* ============================================================================
+   3) TABS — ImGui Tab (square, underline indicator)
+   ============================================================================ */
+#kc-dl-float #kc-tabs,
+#kc-dl-float .kc-seg {
+  display: flex !important;
+  gap: 0 !important;
+  background: var(--im-menubar-bg) !important;
+  border: none !important;
+  border-bottom: 1px solid var(--im-border) !important;
+  padding: 0 !important;
+  margin: -8px -8px 8px !important;  /* stretch to edges */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+#kc-dl-float #kc-tabs::-webkit-scrollbar { display: none; }
+
+#kc-dl-float .kc-tab,
+#kc-dl-float .kc-seg-btn {
+  background: transparent !important;
+  color: var(--im-text) !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: var(--im-tab-radius, 0) !important;
+  padding: 7px 12px !important;
+  margin: 0 !important;
+  font-family: var(--im-font) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.01em !important;
+  cursor: pointer !important;
+  white-space: nowrap;
+  transition: background 0.06s ease, border-color 0.06s ease, color 0.06s ease;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+#kc-dl-float .kc-tab:hover,
+#kc-dl-float .kc-seg-btn:hover {
+  background: var(--im-tab-hov) !important;
+  color: #fff !important;
+}
+#kc-dl-float .kc-tab.is-active,
+#kc-dl-float .kc-seg-btn.is-active {
+  background: var(--im-tab-act) !important;
+  color: #fff !important;
+  border-bottom-color: var(--im-accent) !important;
+}
+
+/* Panel wrappers — keep flex column (matches content.css contract) */
+#kc-dl-float .kc-tab-panel { display: none !important; flex-direction: column !important; gap: 0 !important; padding: 0 !important; }
+#kc-dl-float .kc-tab-panel.is-active { display: flex !important; }
+
+/* ============================================================================
+   4) COLLAPSIBLE SECTIONS (ImGui CollapsingHeader)
+   ============================================================================ */
+#kc-dl-float .kc-block,
+#kc-dl-float .kc-group {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  margin: 0 0 8px !important;
+  box-sizing: border-box;
+}
+/* Collapse/expand behaviour — like ImGui CollapsingHeader */
+#kc-dl-float .kc-block.is-collapsed > :not(.kc-block-h) { display: none !important; }
+#kc-dl-float .kc-block.is-collapsed .kc-block-h { border-left-color: var(--im-border) !important; }
+#kc-dl-float .kc-block.is-collapsed .kc-block-h b { color: var(--im-text-dis) !important; }
+#kc-dl-float .kc-block-h {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--im-header) !important;
+  color: var(--im-text) !important;
+  border: none !important;
+  border-left: 3px solid var(--im-accent) !important;   /* ImGui accent bar */
+  border-radius: 0 !important;
+  padding: 5px 8px !important;
+  margin: 0 0 4px !important;
+  font-family: var(--im-font) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em !important;
+  text-transform: none !important;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* ImGui CollapsingHeader triangle indicator */
+#kc-dl-float .kc-block-h::before {
+  content: "\25BE";  /* ▾ */
+  font-size: 10px !important;
+  color: var(--im-text) !important;
+  flex-shrink: 0;
+  transition: transform 0.1s ease;
+}
+#kc-dl-float .kc-block.is-collapsed .kc-block-h::before {
+  content: "\25B8";  /* ▸ */
+  color: var(--im-text-dis) !important;
+}
+#kc-dl-float .kc-block-h:hover { background: var(--im-header-hov) !important; }
+#kc-dl-float .kc-block-h:active { background: var(--im-header-act) !important; }
+#kc-dl-float .kc-block-h b { font-weight: 600; color: #fff; }
+#kc-dl-float .kc-block-h span { color: var(--im-text-dis); font-size: 11px; font-weight: 400; }
+
+/* Content inside blocks — slight indent like ImGui TreeNode */
+#kc-dl-float .kc-block-h + .kc-row,
+#kc-dl-float .kc-block-h + label,
+#kc-dl-float .kc-block-h + .kc-switch-row { padding-left: 10px; }
+
+/* ============================================================================
+   5) CHECKBOX ROWS (ImGui Checkbox — label RIGHT of box)
+   ============================================================================ */
+#kc-dl-float .kc-row,
+#kc-dl-float label.kc-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px !important;
+  margin: 0 0 2px !important;
+  color: var(--im-text) !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  cursor: pointer;
+  font-size: 12.5px !important;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.06s ease;
+  box-sizing: border-box;
+}
+#kc-dl-float .kc-row:hover,
+#kc-dl-float label.kc-switch-row:hover { background: var(--im-frame-hov) !important; }
+
+/* ImGui: checkbox at the LEFT, label follows on the right */
+#kc-dl-float label.kc-switch-row {
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+}
+#kc-dl-float label.kc-switch-row input[type="checkbox"] { order: -1 !important; margin-right: 0 !important; }
+#kc-dl-float label.kc-switch-row > span:not(i) {
+  order: 2 !important;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Square ImGui checkbox */
+#kc-dl-float input[type="checkbox"],
+#kc-drops-hud input[type="checkbox"],
+#kc-camp-picker input[type="checkbox"],
+#kc-switch-log input[type="checkbox"],
+#kc-lx-card input[type="checkbox"] {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  width: 18px !important;
+  height: 18px !important;
+  margin: 0 !important;
+  flex-shrink: 0;
+  background: var(--im-frame-bg) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: var(--im-frame-radius, 0) !important;
+  cursor: pointer !important;
+  position: relative;
+  transition: background 0.06s ease, border-color 0.06s ease;
+}
+#kc-dl-float input[type="checkbox"]:hover,
+#kc-drops-hud input[type="checkbox"]:hover,
+#kc-camp-picker input[type="checkbox"]:hover,
+#kc-switch-log input[type="checkbox"]:hover,
+#kc-lx-card input[type="checkbox"]:hover {
+  background: var(--im-frame-hov) !important;
+  border-color: var(--im-accent) !important;
+}
+#kc-dl-float input[type="checkbox"]:active,
+#kc-drops-hud input[type="checkbox"]:active,
+#kc-camp-picker input[type="checkbox"]:active,
+#kc-lx-card input[type="checkbox"]:active {
+  background: var(--im-frame-act) !important;
+}
+#kc-dl-float input[type="checkbox"]:checked,
+#kc-drops-hud input[type="checkbox"]:checked,
+#kc-camp-picker input[type="checkbox"]:checked,
+#kc-switch-log input[type="checkbox"]:checked,
+#kc-lx-card input[type="checkbox"]:checked {
+  background: var(--im-frame-bg) !important;
+  border-color: var(--im-check) !important;
+}
+#kc-dl-float input[type="checkbox"]:checked::after,
+#kc-drops-hud input[type="checkbox"]:checked::after,
+#kc-camp-picker input[type="checkbox"]:checked::after,
+#kc-switch-log input[type="checkbox"]:checked::after,
+#kc-lx-card input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid var(--im-check) !important;
+  border-width: 0 2px 2px 0 !important;
+  transform: rotate(45deg);
+  border-radius: 0 !important;
+}
+#kc-dl-float input[type="checkbox"]:focus-visible {
+  outline: 1px solid var(--im-accent);
+  outline-offset: 2px;
+}
+
+/* Switch row — hide old pill indicator, use plain ImGui style */
+#kc-dl-float .kc-switch-row i {
+  display: none !important;  /* old iOS-style pill — replaced by checkbox */
+}
+
+/* ============================================================================
+   6) INPUTS / SELECT (ImGui InputText / Combo)
+   ============================================================================ */
+#kc-dl-float input[type="text"],
+#kc-dl-float input[type="search"],
+#kc-dl-float input[type="number"],
+#kc-dl-float select,
+#kc-camp-picker input,
+#kc-switch-log input,
+#kc-switch-log select,
+#kc-drops-hud input[type="search"],
+#kc-drops-hud input[type="text"] {
+  background: var(--im-frame-bg) !important;
+  color: var(--im-text) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: var(--im-frame-radius, 0) !important;
+  padding: 4px 8px !important;
+  font-family: var(--im-font) !important;
+  font-size: 12.5px !important;
+  transition: background 0.06s ease, border-color 0.06s ease;
+  box-sizing: border-box;
+  min-height: 22px;
+}
+#kc-dl-float input:hover,
+#kc-dl-float select:hover,
+#kc-camp-picker input:hover,
+#kc-switch-log input:hover,
+#kc-switch-log select:hover {
+  background: var(--im-frame-hov) !important;
+  border-color: var(--im-border-hov) !important;
+}
+#kc-dl-float input:focus,
+#kc-dl-float select:focus,
+#kc-camp-picker input:focus,
+#kc-switch-log input:focus,
+#kc-switch-log select:focus {
+  background: var(--im-frame-bg) !important;
+  border-color: var(--im-accent) !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Select — ImGui Combo arrow */
+#kc-dl-float select,
+#kc-camp-picker select,
+#kc-switch-log select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-image: linear-gradient(45deg, transparent 50%, var(--im-text-dis) 50%),
+                    linear-gradient(135deg, var(--im-text-dis) 50%, transparent 50%) !important;
+  background-position: calc(100% - 14px) center, calc(100% - 10px) center !important;
+  background-size: 4px 4px !important;
+  background-repeat: no-repeat !important;
+  padding-right: 26px !important;
+  cursor: pointer;
+}
+
+/* Field row */
+#kc-dl-float .kc-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px !important;
+  font-size: 12.5px !important;
+}
+#kc-dl-float .kc-field > span { flex-shrink: 0; color: var(--im-text); }
+
+/* ============================================================================
+   7) BUTTONS (ImGui Button)
+   ============================================================================ */
+#kc-dl-float .kc-btn,
+#kc-dl-float .kc-btn-pill,
+#kc-dl-float .kc-btn-sm,
+#kc-dl-float .kc-enable-btn,
+#kc-dl-float .kc-bind-btn,
+#kc-dl-float .kc-pos-apply,
+#kc-dl-float .kc-pos-pick,
+.kc-btn,
+.kc-btn-sm,
+.kc-btn-primary,
+.kc-dhud-btn,
+.kc-slog-btn,
+.kc-slog-tbtn,
+.kc-next-btn,
+#kc-next-level,
+#kc-camp-picker button,
+#kc-switch-log button,
+#kc-level-hud .kc-lhud-toggle,
+.kc-lhud-flags button,
+#kc-lx-card button,
+.kc-stall-debug button {
+  background: var(--im-btn) !important;
+  color: var(--im-text) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: var(--im-frame-radius, 0) !important;
+  padding: 4px 10px !important;
+  font-family: var(--im-font) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
+  transition: background 0.06s ease, border-color 0.06s ease;
+  box-sizing: border-box;
+  min-height: 22px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#kc-dl-float .kc-btn:hover,
+#kc-dl-float .kc-btn-pill:hover,
+#kc-dl-float .kc-btn-sm:hover,
+#kc-dl-float .kc-enable-btn:hover,
+#kc-dl-float .kc-bind-btn:hover,
+#kc-dl-float .kc-pos-apply:hover,
+#kc-dl-float .kc-pos-pick:hover,
+.kc-btn:hover,
+.kc-btn-sm:hover,
+.kc-btn-primary:hover,
+.kc-dhud-btn:hover,
+.kc-slog-btn:hover,
+.kc-slog-tbtn:hover,
+.kc-next-btn:hover,
+#kc-next-level:hover,
+#kc-camp-picker button:hover,
+#kc-switch-log button:hover,
+.kc-lhud-flags button:hover,
+#kc-lx-card button:hover {
+  background: var(--im-btn-hov) !important;
+  border-color: var(--im-border-hov) !important;
+  color: #fff !important;
+}
+#kc-dl-float .kc-btn:active,
+#kc-dl-float .kc-btn-sm:active,
+.kc-btn:active,
+.kc-dhud-btn:active,
+.kc-next-btn:active {
+  background: var(--im-btn-act) !important;
+}
+
+/* Ghost buttons — ImGui transparent Button */
+#kc-dl-float .kc-btn-ghost,
+#kc-dl-float .kc-btn-pill.kc-btn-ghost {
+  background: transparent !important;
+  border-color: var(--im-border) !important;
+  color: var(--im-text) !important;
+}
+#kc-dl-float .kc-btn-ghost:hover { background: var(--im-frame-hov) !important; }
+
+/* Enabled/Disabled pill */
+#kc-dl-float .kc-enable-btn.is-on,
+.kc-lhud-flags button.on,
+.kc-flag.on {
+  background: rgba(89, 230, 140, 0.2) !important;
+  border-color: var(--im-ok) !important;
+  color: var(--im-ok) !important;
+}
+#kc-dl-float .kc-bind-btn.is-listening {
+  background: rgba(230, 179, 64, 0.2) !important;
+  border-color: var(--im-warn) !important;
+  color: var(--im-warn) !important;
+}
+
+/* Action row — ImGui same-line buttons */
+#kc-dl-float .kc-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 4px !important;
+  padding: 4px 8px !important;
+}
+
+/* ============================================================================
+   8) POSITIONS / BINDS list (compact, aligned like ImGui tables)
+   ============================================================================ */
+#kc-dl-float .kc-pos-row,
+#kc-dl-float .kc-bind-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) 50px 50px auto auto;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 8px !important;
+  font-size: 12px !important;
+}
+#kc-dl-float .kc-bind-row {
+  grid-template-columns: minmax(90px, 1fr) auto;
+}
+#kc-dl-float .kc-pos-row input.kc-pos-x,
+#kc-dl-float .kc-pos-row input.kc-pos-y,
+#kc-dl-float .kc-bind-row .kc-bind-btn {
+  min-width: 50px !important;
+  padding: 3px 6px !important;
+}
+
+/* ============================================================================
+   9) SLIDER (ImGui SliderFloat)
+   ============================================================================ */
+#kc-dl-float input[type="range"],
+#kc-lx-card input[type="range"] {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  width: 100%;
+  height: 18px;
+  background: transparent !important;
+  cursor: pointer;
+  margin: 4px 0 !important;
+}
+#kc-dl-float input[type="range"]::-webkit-slider-runnable-track,
+#kc-lx-card input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  background: var(--im-frame-bg) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: 0 !important;
+}
+#kc-dl-float input[type="range"]::-webkit-slider-thumb,
+#kc-lx-card input[type="range"]::-webkit-slider-thumb {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  width: 12px;
+  height: 14px;
+  margin-top: -5px;
+  background: var(--im-slider-grab) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: 0 !important;
+  cursor: grab;
+}
+#kc-dl-float input[type="range"]::-webkit-slider-thumb:hover,
+#kc-lx-card input[type="range"]::-webkit-slider-thumb:hover {
+  background: var(--im-accent) !important;
+}
+#kc-dl-float input[type="range"]::-moz-range-track,
+#kc-lx-card input[type="range"]::-moz-range-track {
+  height: 6px;
+  background: var(--im-frame-bg) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: 0 !important;
+}
+#kc-dl-float input[type="range"]::-moz-range-thumb,
+#kc-lx-card input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 14px;
+  background: var(--im-slider-grab) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: 0 !important;
+  cursor: grab;
+}
+
+/* ============================================================================
+   10) SEPARATORS (ImGui Separator)
+   ============================================================================ */
+#kc-dl-float .kc-sep,
+#kc-dl-float .kc-separator,
+#kc-drops-hud .kc-dhud-sep,
+#kc-switch-log .kc-slog-sep {
+  display: block;
+  height: 1px !important;
+  background: var(--im-sep) !important;
+  border: none !important;
+  margin: 6px 0 !important;
+}
+
+/* ============================================================================
+   11) PROGRESS BARS (ImGui ProgressBar)
+   ============================================================================ */
+.kc-drops-prog-track,
+.kc-prog-bar,
+.kc-lx-track,
+.kc-drops-reward-bar {
+  background: var(--im-frame-bg) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: 0 !important;
+  height: 14px !important;
+  overflow: hidden;
+}
+.kc-drops-prog-fill,
+.kc-prog-bar-fill {
+  background: var(--im-accent) !important;
+  border-radius: 0 !important;
+  height: 100%;
+  transition: width 0.25s ease;
+}
+.kc-drops-reward.is-done .kc-drops-prog-fill,
+.kc-prog-rew.is-done .kc-prog-bar-fill { background: var(--im-ok) !important; }
+
+/* ============================================================================
+   12) ITEM LISTS (Drops / Campaigns / Logs)
+   ============================================================================ */
+#kc-dl-float .kc-drops-list,
+#kc-dl-float #kc-pos-list,
+#kc-dl-float #kc-bind-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 !important;
+  max-height: 220px;
+  overflow-y: auto;
+  margin-top: 4px;
+}
+#kc-dl-float .kc-drops-item,
+.kc-inline-camp,
+.kc-slog-row {
+  background: var(--im-frame-bg) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: 0 !important;
+  padding: 4px 8px !important;
+  font-size: 12px !important;
+  transition: background 0.06s ease, border-color 0.06s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.kc-drops-item:hover,
+.kc-inline-camp:hover,
+.kc-slog-row:hover {
+  background: var(--im-frame-hov) !important;
+  border-color: var(--im-border-hov) !important;
+}
+.kc-drops-item.kc-drops-selected,
+.kc-inline-camp.is-on {
+  background: rgba(66, 152, 249, 0.14) !important;
+  border-color: var(--im-accent) !important;
+}
+
+/* ============================================================================
+   13) TEXT COLORS (ImGui semantic colors)
+   ============================================================================ */
+.kc-lhud-row .k, .kc-lx-muted, .kc-camp-sub, .kc-dhud-sub,
+.kc-drops-cat, .kc-card-sub, .kc-slog-time, #kc-dl-float .kc-card-sub {
+  color: var(--im-text-dis) !important;
+  font-size: 11.5px !important;
+}
+.kc-lhud-row .v { color: var(--im-text) !important; font-weight: 500; }
+.kc-lhud-row .v.ok  { color: var(--im-ok) !important; }
+.kc-lhud-row .v.warn { color: var(--im-warn) !important; }
+.kc-lhud-row .v.bad { color: var(--im-bad) !important; }
+.kc-sd-dot.ok  { background: var(--im-ok) !important; }
+.kc-sd-dot.warn{ background: var(--im-warn) !important; }
+.kc-sd-dot.bad { background: var(--im-bad) !important; }
+
+/* ============================================================================
+   14) SCROLLBAR (ImGui thin, dark)
+   ============================================================================ */
+#kc-dl-float *,
+#kc-drops-hud *,
+#kc-camp-picker *,
+#kc-switch-log *,
+#kc-level-hud *,
+#kc-lx-card *,
+#kc-stall-debug * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--im-grab) transparent;
+}
+#kc-dl-float ::-webkit-scrollbar,
+#kc-drops-hud ::-webkit-scrollbar,
+#kc-camp-picker ::-webkit-scrollbar,
+#kc-switch-log ::-webkit-scrollbar,
+#kc-level-hud ::-webkit-scrollbar,
+#kc-lx-card ::-webkit-scrollbar,
+#kc-stall-debug ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+#kc-dl-float ::-webkit-scrollbar-track,
+#kc-drops-hud ::-webkit-scrollbar-track,
+#kc-camp-picker ::-webkit-scrollbar-track,
+#kc-switch-log ::-webkit-scrollbar-track,
+#kc-level-hud ::-webkit-scrollbar-track,
+#kc-lx-card ::-webkit-scrollbar-track,
+#kc-stall-debug ::-webkit-scrollbar-track {
+  background: var(--im-scroll-bg);
+}
+#kc-dl-float ::-webkit-scrollbar-thumb,
+#kc-drops-hud ::-webkit-scrollbar-thumb,
+#kc-camp-picker ::-webkit-scrollbar-thumb,
+#kc-switch-log ::-webkit-scrollbar-thumb,
+#kc-level-hud ::-webkit-scrollbar-thumb,
+#kc-lx-card ::-webkit-scrollbar-thumb,
+#kc-stall-debug ::-webkit-scrollbar-thumb {
+  background: var(--im-grab);
+  border-radius: 0 !important;
+}
+#kc-dl-float ::-webkit-scrollbar-thumb:hover,
+#kc-drops-hud ::-webkit-scrollbar-thumb:hover,
+#kc-camp-picker ::-webkit-scrollbar-thumb:hover,
+#kc-switch-log ::-webkit-scrollbar-thumb:hover {
+  background: var(--im-border-hov);
+}
+
+/* ============================================================================
+   15) TOAST (ImGui Tooltip-ish)
+   ============================================================================ */
+#kc-refresh-toast,
+#kc-drops-claim-toast,
+#kc-stall-toast {
+  background: var(--im-popup-bg) !important;
+  color: var(--im-text) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: 0 !important;
+  font-family: var(--im-font) !important;
+  font-size: 12.5px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+}
+#kc-refresh-toast.kc-toast-ok   { border-color: var(--im-ok) !important; }
+#kc-refresh-toast.kc-toast-fail  { border-color: var(--im-bad) !important; }
+
+/* ============================================================================
+   16) TERMS MODAL (ImGui Popup)
+   ============================================================================ */
+#kc-dl-terms {
+  background: rgba(0, 0, 0, 0.55) !important;
+  backdrop-filter: blur(2px);
+}
+.kc-terms-card {
+  background: var(--im-window-bg) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: 0 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+}
+.kc-terms-card h2 {
+  color: #fff !important;
+  background: var(--im-title-act) !important;
+  margin: -16px -16px 12px !important;
+  padding: 8px 12px !important;
+  border-bottom: 1px solid var(--im-border) !important;
+  border-radius: 0 !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  text-transform: none !important;
+}
+.kc-terms-card p { color: var(--im-text) !important; font-size: 12.5px !important; }
+
+/* ============================================================================
+   17) FLOAT BUTTON (menu open button — ImGui Floating button)
+   ============================================================================ */
+#kc-menu-btn {
+  background: var(--im-frame-bg) !important;
+  color: var(--im-text) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: 0 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
+  transition: background 0.06s ease, border-color 0.06s ease;
+}
+#kc-menu-btn:hover {
+  background: var(--im-frame-hov) !important;
+  border-color: var(--im-accent) !important;
+  color: #fff !important;
+}
+#kc-menu-btn.is-open {
+  background: rgba(66, 152, 249, 0.14) !important;
+  border-color: var(--im-accent) !important;
+  color: var(--im-accent) !important;
+}
+
+/* ============================================================================
+   18) PANEL SIZE — clamp to viewport
+   ============================================================================ */
+#kc-dl-float:not(.is-collapsed) {
+  width: 340px !important;
+  min-width: 300px !important;
+  max-width: min(90vw, 480px) !important;
+  max-height: var(--kc-menu-maxh, 80vh) !important;
+  overflow-y: auto !important;
+}
+#kc-dl-float:not(.is-collapsed) .kc-float-body {
+  max-height: calc(var(--kc-menu-maxh, 80vh) - 40px);
+  overflow-y: auto;
+  padding-bottom: 8px;  /* ensure last section isn't clipped */
+}
+#kc-dl-float:not(.is-collapsed) .kc-float-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+/* ============================================================================
+   19) STATUS PILLS (ImGui Badge)
+   ============================================================================ */
+#kc-dl-float .kc-status-pill,
+#kc-drops-hud .kc-drops-status,
+.kc-lhud-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--im-frame-bg) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: 0 !important;
+  padding: 2px 8px !important;
+  font-size: 11px !important;
+  color: var(--im-text-dis) !important;
+  margin-left: auto;
+}
+#kc-dl-float .kc-status-pill.is-on,
+.kc-lhud-status.is-on { color: var(--im-ok) !important; border-color: var(--im-ok) !important; }
+
+/* ============================================================================
+   20) HOVER HIGHLIGHT for interactive rows (ImGui ItemHovered)
+   ============================================================================ */
+#kc-dl-float .kc-row:has(input:checked) {
+  background: rgba(66, 152, 249, 0.06) !important;
+}
+
+/* ============================================================================
+   21) FOCUS VISIBLE (ImGui keyboard nav)
+   ============================================================================ */
+#kc-dl-float button:focus-visible,
+#kc-dl-float input:focus-visible,
+#kc-dl-float select:focus-visible,
+#kc-dl-float label:focus-visible {
+  outline: 1px solid var(--im-accent) !important;
+  outline-offset: 1px !important;
+  border-radius: 0 !important;
+}
+
+/* ============================================================================
+   22) TOOLTIP (ImGui InfoTooltip style)
+   ============================================================================ */
+#kc-dl-float [data-tip],
+#kc-drops-hud [data-tip] {
+  position: relative;
+}
+#kc-dl-float [data-tip]:hover::after,
+#kc-drops-hud [data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  background: var(--im-popup-bg) !important;
+  color: var(--im-text) !important;
+  border: 1px solid var(--im-border) !important;
+  border-radius: 0 !important;
+  padding: 4px 8px !important;
+  font-size: 11px !important;
+  font-family: var(--im-font) !important;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 9999;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}

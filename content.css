@@ -1,0 +1,152 @@
+/* Kick Drops & Level — fully scoped, no page color leak */
+
+/* Toast / terms — scoped */
+#kc-refresh-toast {
+  position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+  z-index: 2147483600; padding: 10px 18px; border-radius: 10px;
+  font-family: Inter, system-ui, sans-serif; font-size: 13px; font-weight: 600;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.45); pointer-events: none;
+}
+#kc-refresh-toast.kc-toast-ok {
+  background: #090b0f; border: 1px solid #3a4558; color: #ffffff;
+}
+#kc-refresh-toast.kc-toast-fail {
+  background: #090b0f; border: 1px solid #ff5a6a; color: #ff8a95;
+}
+#kc-drops-claim-toast {
+  position: fixed; bottom: 24px; right: 24px; z-index: 2147483100;
+  background: #090b0f; border: 1px solid #1c2230; color: #ffffff;
+  padding: 12px 16px; border-radius: 10px; font-family: Inter, system-ui, sans-serif;
+  font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); max-width: 280px;
+}
+
+
+/* Takılma onarıcı bildirimi */
+#kc-stall-toast {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 2147483600;
+  max-width: 320px;
+  padding: 9px 12px;
+  background: #090b0f;
+  color: #ffffff;
+  border: 1px solid #1c2230;
+  border-radius: 10px;
+  font: 600 12px Inter, system-ui, sans-serif;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.45);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity .2s, transform .2s;
+  pointer-events: none;
+}
+#kc-stall-toast.on { opacity: 1; transform: none; }
+
+/* HUD: sonraki yayın */
+.kc-dhud-btn.kc-dhud-next {
+  color: #53fc18;
+  font-weight: 700;
+}
+.kc-lhud-next {
+  margin-top: 8px;
+  width: 100%;
+  background: rgba(83, 252, 24, 0.12);
+  border: 1px solid rgba(83, 252, 24, 0.35);
+  color: #53fc18;
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.kc-lhud-next:hover {
+  background: rgba(83, 252, 24, 0.22);
+}
+
+/* Anlık faaliyet */
+.kc-combined-now {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 6px 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(83, 252, 24, 0.08);
+  border: 1px solid rgba(83, 252, 24, 0.25);
+}
+.kc-now-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #53fc18;
+  opacity: 0.9;
+}
+.kc-now-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e8ffe0;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.kc-btn-primary {
+  background: #0e1118 !important;
+  border: 1px solid #1c2230 !important;
+  color: #ffffff !important;
+  font-weight: 600;
+}
+
+.kc-btn-primary:hover {
+  border-color: #2a3344 !important;
+}
+
+.kc-drops-sel-summary {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #9aa3b2;
+  line-height: 1.35;
+  padding: 0 2px;
+}
+#kc-refresh-toast,
+#kc-drops-claim-toast {
+  border-radius: 4px !important;
+  font-family: "Segoe UI", Inter, system-ui, sans-serif !important;
+  font-size: 11.5px !important;
+}
+@keyframes kc-bind-pulse {
+  50% { opacity: 0.7; }
+}
+#kc-lx-body {
+  padding: 12px 14px !important;
+  background: #0e0e10 !important;
+}
+#kc-lx-dot {
+  background: #53fc18 !important;
+  box-shadow: 0 0 8px rgba(83,252,24,0.45) !important;
+}
+#kc-lx-bar {
+  background: #53fc18 !important;
+  border-radius: 999px !important;
+}
+#kc-lx-logs,
+#kc-lx-history {
+  background: #16161a !important;
+  border: 1px solid #222228 !important;
+  border-radius: 10px !important;
+}
+#kc-lx-mini {
+  border-radius: 10px !important;
+  padding: 8px 12px !important;
+}
+
+/* Profile XP ring — Kick green */
+.kc-lx-ring-fg {
+  stroke: #53fc18 !important;
+}
+.kc-lx-ring-pct {
+  color: #fff !important;
+}
+#kc-lx-dot {
+  background: #53fc18 !important;
+}

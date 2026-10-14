@@ -1,0 +1,94 @@
+/* ============================================================================
+   Kick Drops & Level — ImThemes (Patitotective/ImThemes) theme definitions.
+   Colors converted from the ImThemes TOML (StyleColors) to CSS rgba() with
+   0-255 channels (upstream data is normalized 0-1, multiplied by 255).
+   StyleVars converted to CSS: windowRounding → border-radius; frameRounding →
+   input/button border-radius; itemSpacing → padding/gap.
+   ============================================================================ */
+
+/* Tema seçimi kaldırıldı — tek sabit koyu (dougbinks) tema. */
+
+/* =====================  DARK (dougbinks) ===================== */
+:root,
+#kc-dl-float[data-theme="imgui"],
+body[data-kc-theme="imgui"] {
+  --im-window-bg:        rgba(15, 15, 15, 0.94);
+  --im-child-bg:         rgba(0, 0, 0, 0);
+  --im-popup-bg:         rgba(20, 20, 20, 0.94);
+  --im-border:           rgba(109, 109, 127, 0.50);
+  --im-border-shadow:    rgba(0, 0, 0, 0);
+  --im-frame-bg:         rgba(40, 73, 122, 0.54);
+  --im-frame-hov:        rgba(66, 150, 249, 0.40);
+  --im-frame-act:        rgba(66, 150, 249, 0.67);
+  --im-title-bg:         rgba(10, 10, 10, 1);
+  --im-title-act:        rgba(40, 73, 122, 1);
+  --im-title-coll:       rgba(0, 0, 0, 0.51);
+  --im-menubar-bg:       rgba(35, 35, 35, 1);
+  --im-scroll-bg:        rgba(5, 5, 5, 0.53);
+  --im-scroll-grab:      rgba(79, 79, 79, 1);
+  --im-scroll-grab-hov:  rgba(104, 104, 104, 1);
+  --im-scroll-grab-act:  rgba(130, 130, 130, 1);
+  --im-check:            rgba(66, 150, 249, 1);
+  --im-slider-grab:      rgba(61, 132, 224, 1);
+  --im-slider-grab-act:  rgba(66, 150, 249, 1);
+  --im-btn:              rgba(66, 150, 249, 0.40);
+  --im-btn-hov:          rgba(66, 150, 249, 1);
+  --im-btn-act:          rgba(15, 135, 249, 1);
+  --im-header:           rgba(66, 150, 249, 0.31);
+  --im-header-hov:       rgba(66, 150, 249, 0.80);
+  --im-header-act:       rgba(66, 150, 249, 1);
+  --im-sep:              rgba(109, 109, 127, 0.50);
+  --im-sep-hov:          rgba(25, 102, 191, 0.78);
+  --im-sep-act:          rgba(25, 102, 191, 1);
+  --im-resize:           rgba(66, 150, 249, 0.20);
+  --im-resize-hov:       rgba(66, 150, 249, 0.67);
+  --im-resize-act:       rgba(66, 150, 249, 0.95);
+  --im-tab:              rgba(45, 89, 147, 0.86);
+  --im-tab-hov:          rgba(66, 150, 249, 0.80);
+  --im-tab-act:          rgba(50, 104, 173, 1);
+  --im-tab-unf:          rgba(17, 26, 37, 0.97);
+  --im-tab-unf-act:      rgba(34, 66, 108, 1);
+  --im-text:             rgba(255, 255, 255, 1);
+  --im-text-dis:         rgba(127, 127, 127, 1);
+  --im-text-sel-bg:      rgba(66, 150, 249, 0.35);
+  --im-nav-hl:           rgba(66, 150, 249, 1);
+  --im-modal-dim:        rgba(204, 204, 204, 0.35);
+  --im-plot-hist:        rgba(229, 178, 0, 1);
+  --im-table-header:     rgba(48, 48, 51, 1);
+  --im-table-border-st:  rgba(79, 79, 89, 1);
+  --im-table-border-lt:  rgba(58, 58, 63, 1);
+  --im-ok:               rgba(66, 150, 249, 1);
+  --im-warn:             rgba(229, 178, 0, 1);
+  --im-bad:              rgba(255, 109, 89, 1);
+  --im-font: "Segoe UI", system-ui, sans-serif;
+  --im-radius: 0px;   /* windowRounding = 0 */
+  --im-frame-radius: 0px; /* frameRounding = 0 */
+  --im-tab-radius: 4px;   /* tabRounding = 4 */
+  --im-item-spacing-x: 8px;
+  --im-item-spacing-y: 4px;
+  --im-window-padding: 8px;
+  --im-frame-padding-x: 4px;
+  --im-frame-padding-y: 3px;
+}
+
+/* Aliases used by imgui-theme.css */
+:root {
+  --im-accent: var(--im-check, rgba(66, 150, 249, 1));
+  --im-border-hov: var(--im-frame-hov, rgba(66, 150, 249, 0.40));
+  --im-grab: var(--im-scroll-grab, rgba(79, 79, 79, 1));
+  --im-accent-hv: var(--im-btn-hov, rgba(66, 150, 249, 1));
+  --im-accent-ac: var(--im-btn-act, rgba(15, 135, 249, 1));
+  --im-bg: var(--im-window-bg, rgba(15, 15, 15, 0.94));
+  --im-bg-pop: var(--im-popup-bg, rgba(20, 20, 20, 0.94));
+  --im-title: var(--im-title-bg, rgba(10, 10, 10, 1));
+  --im-title-act: var(--im-title-act, rgba(40, 73, 122, 1));
+  --im-menubar: var(--im-menubar-bg, rgba(35, 35, 35, 1));
+  --im-frame: var(--im-frame-bg, rgba(40, 73, 122, 0.54));
+  --im-frame-hov: var(--im-frame-hov, rgba(66, 150, 249, 0.40));
+  --im-frame-act: var(--im-frame-act, rgba(66, 150, 249, 0.67));
+  --im-text-dis: var(--im-text-dis, rgba(127, 127, 127, 1));
+  --im-menubar-bg: var(--im-menubar-bg, rgba(35, 35, 35, 1));
+  --im-header: var(--im-header, rgba(66, 150, 249, 0.31));
+  --im-header-hov: var(--im-header-hov, rgba(66, 150, 249, 0.80));
+  --im-header-act: var(--im-header-act, rgba(66, 150, 249, 1));
+}

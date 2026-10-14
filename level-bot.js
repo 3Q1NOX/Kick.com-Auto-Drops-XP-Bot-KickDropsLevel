@@ -1,0 +1,1101 @@
+(function () {
+  const KC = (window.KickControl = window.KickControl || {});
+
+  let botTimer = null;
+  let switchCooldownUntil = 0;
+  let liveCache = [];
+  let liveCacheAt = 0;
+  let goNextBusy = false; // goNextLive re-entrancy guard
+  let tickBotBusy = false; // tickBot re-entrancy guard
+  let liveFailStreak = 0; // consecutive total fetch failures (backoff)
+  let liveBlockedUntil = 0;
+  let consecutiveBad = 0;
+  let lastLiveCheckAt = 0;
+  let lastLiveCheckResult = null; // true=live, false=offline, null=unknown
+  let lastLiveCheckSlug = '';
+  let lastVideoTime = 0;
+  let lastVideoProgressAt = 0;
+  let statusText = 'Kapalı';
+  const BAD_NEED = 3; // ~3 ticks before switch
+  const TICK_MS = 6000;
+  const STUCK_MS = 22000; // no progress this long → stuck
+
+  // ── Keep tab "active" so Kick still awards watch level XP ──
+  (function keepAwake() {
+    function farmingActive() {
+      return !!(
+        KC.settings?.level_bot ||
+        KC.settings?.anti_stuck ||
+        KC.settings?.bg_watch ||
+        KC.settings?.drops_enabled
+      );
+    }
+
+    // Strong visibility / focus overrides (Page Visibility + hasFocus)
+    // SADECE farm açıkken (level_bot / anti_stuck / bg_watch / drops) — kapalıyken dokunma
+    function forceVisible() {
+      if (!farmingActive()) return;
+      try {
+        const targets = [
+          [Document.prototype, 'hidden', false],
+          [Document.prototype, 'visibilityState', 'visible'],
+          [document, 'hidden', false],
+          [document, 'visibilityState', 'visible']
+        ];
+        for (const [obj, prop, val] of targets) {
+          try {
+            const d = Object.getOwnPropertyDescriptor(obj, prop);
+            if (!d || d.configurable) {
+              Object.defineProperty(obj, prop, {
+                configurable: true,
+                enumerable: true,
+                get: () => val
+              });
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+      try {
+        if (typeof document.hasFocus === 'function') {
+          document.hasFocus = function () { return true; };
+        }
+      } catch (_) {}
+      try {
+        Object.defineProperty(document, 'webkitHidden', {
+          configurable: true,
+          get: () => false
+        });
+        Object.defineProperty(document, 'webkitVisibilityState', {
+          configurable: true,
+          get: () => 'visible'
+        });
+      } catch (_) {}
+    }
+
+    // Farm açıkken uygula (settings henüz yoksa settingsReady'de tekrar)
+    setTimeout(forceVisible, 500);
+    setTimeout(forceVisible, 2000);
+    setTimeout(forceVisible, 8000);
+
+    try {
+      document.addEventListener(
+        'visibilitychange',
+        (e) => {
+          if (!farmingActive()) return;
+          try {
+            e.stopImmediatePropagation();
+            e.stopPropagation();
+            e.preventDefault();
+          } catch (_) {}
+          forceVisible();
+        },
+        true
+      );
+    } catch (_) {}
+
+    try {
+      window.addEventListener(
+        'blur',
+        (e) => {
+          if (!farmingActive()) return;
+          try {
+            e.stopImmediatePropagation();
+          } catch (_) {}
+          try {
+            window.dispatchEvent(new FocusEvent('focus'));
+          } catch (_) {}
+        },
+        true
+      );
+    } catch (_) {}
+
+    // Edge/Chrome: unmute without user gesture pauses the video
+    let _userGestured = false;
+    function markUserGesture() {
+      _userGestured = true;
+    }
+    try {
+      const mark = (e) => {
+        if (e && e.isTrusted) markUserGesture();
+      };
+      window.addEventListener('pointerdown', mark, true);
+      window.addEventListener('keydown', mark, true);
+      window.addEventListener('touchstart', mark, true);
+    } catch (_) {}
+
+    function canUnmute() {
+      try {
+        if (_userGestured) return true;
+        if (navigator.userActivation && navigator.userActivation.hasBeenActive) return true;
+      } catch (_) {}
+      return false;
+    }
+
+    function safePlay(v) {
+      if (!v || v.ended) return;
+      // Ses tercihini koruyan ortak oynatıcı (audio-guard.js): reddedilen play() artık videoyu sessize ALMAZ
+      if (typeof KC.resumeVideo === 'function') {
+        if (v.paused) KC.resumeVideo(v);
+        return;
+      }
+      try {
+        if (v.paused) {
+          const p = v.play();
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        }
+      } catch (_) {}
+    }
+
+    function nudgePlayer() {
+      try {
+        const v =
+          document.getElementById('video-player') ||
+          document.querySelector('video#video-player, video[src], video');
+        if (!v) return;
+        safePlay(v);
+      } catch (_) {}
+    }
+    try { if (!KC.safePlayVideo) KC.safePlayVideo = safePlay; } catch (_) {}
+
+    // Human-like presence: move/scroll/hover — NEVER real .click() on UI
+    let _mx = 120 + Math.random() * 200;
+    let _my = 100 + Math.random() * 150;
+    let _scrollTick = 0;
+
+    function fireMouse(type, x, y, target) {
+      try {
+        const opts = {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          clientX: Math.round(x),
+          clientY: Math.round(y),
+          screenX: Math.round(x),
+          screenY: Math.round(y),
+          buttons: 0,
+          button: 0
+        };
+        const ev = new MouseEvent(type, opts);
+        (target || document).dispatchEvent(ev);
+        window.dispatchEvent(new MouseEvent(type, opts));
+      } catch (_) {}
+      try {
+        const pev = new PointerEvent(
+          type === 'mousemove' ? 'pointermove' : type === 'mouseover' ? 'pointerover' : 'pointermove',
+          {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            clientX: Math.round(x),
+            clientY: Math.round(y),
+            pointerId: 1,
+            pointerType: 'mouse',
+            isPrimary: true
+          }
+        );
+        (target || document).dispatchEvent(pev);
+      } catch (_) {}
+    }
+
+    function safeVideoTarget() {
+      try {
+        return (
+          document.getElementById('video-player') ||
+          document.querySelector('video#video-player, video[src], video') ||
+          document.body
+        );
+      } catch (_) {
+        return document.body;
+      }
+    }
+
+    let _lastUserAt = 0;
+    try {
+      const onUser = (e) => {
+        if (e && e.isTrusted) _lastUserAt = Date.now();
+      };
+      ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'].forEach((ev) => {
+        window.addEventListener(ev, onUser, { capture: true, passive: true });
+      });
+    } catch (_) {}
+
+    function botsFarming() {
+      // Heavy sim only when actual farm bots are on — not mere anti_stuck alone
+      return !!(KC.settings?.level_bot || KC.settings?.drops_enabled);
+    }
+
+    function userIsActive() {
+      // User watched / moved in last 45s → don't interfere
+      return Date.now() - _lastUserAt < 45000;
+    }
+
+    function synthActivity() {
+      if (!farmingActive()) return;
+      // Never fight the user while they are watching
+      if (userIsActive()) return;
+      // Full presence sim only with level/drops bots
+      if (!botsFarming() && !KC.settings?.bg_watch) return;
+      // When only bg_watch (no bots): skip mouse/scroll — nudgePlayer is enough
+      if (!botsFarming()) {
+        nudgePlayer();
+        return;
+      }
+
+      // Smooth random walk over video area (not near edges / buttons)
+      const w = Math.max(320, window.innerWidth || 800);
+      const h = Math.max(240, window.innerHeight || 600);
+      const tx = 80 + Math.random() * Math.min(w * 0.55, 700);
+      const ty = 60 + Math.random() * Math.min(h * 0.45, 420);
+      // interpolate a few steps so it looks like movement, not teleport
+      const steps = 2 + Math.floor(Math.random() * 3);
+      for (let i = 1; i <= steps; i++) {
+        const t = i / steps;
+        const x = _mx + (tx - _mx) * t;
+        const y = _my + (ty - _my) * t;
+        fireMouse('mousemove', x, y, safeVideoTarget());
+      }
+      _mx = tx;
+      _my = ty;
+
+      // Occasional hover over video only (no click)
+      if (Math.random() < 0.35) {
+        const v = safeVideoTarget();
+        fireMouse('mouseover', _mx, _my, v);
+        fireMouse('mouseenter', _mx, _my, v);
+      }
+
+      // Tiny harmless scroll pulse on window (reversible) — not on inputs
+      _scrollTick++;
+      if (_scrollTick % 4 === 0) {
+        try {
+          const dy = Math.random() < 0.5 ? 1 : -1;
+          window.scrollBy({ top: dy, left: 0, behavior: 'instant' });
+          // undo so page doesn't drift
+          setTimeout(() => {
+            try {
+              window.scrollBy({ top: -dy, left: 0, behavior: 'instant' });
+            } catch (_) {}
+          }, 50);
+        } catch (_) {}
+      }
+
+      // Focus only when idle and not typing
+      try {
+        if (!userIsActive()) {
+          const ae = document.activeElement;
+          const tag = ae && ae.tagName ? ae.tagName.toLowerCase() : '';
+          if (tag !== 'input' && tag !== 'textarea' && !(ae && ae.isContentEditable)) {
+            try {
+              document.body && document.body.focus && document.body.focus({ preventScroll: true });
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+
+      // Harmless key pulse (Shift) — does not type or send chat
+      if (Math.random() < 0.2) {
+        try {
+          const kopts = { bubbles: true, cancelable: true, key: 'Shift', code: 'ShiftLeft', keyCode: 16 };
+          document.dispatchEvent(new KeyboardEvent('keydown', kopts));
+          document.dispatchEvent(new KeyboardEvent('keyup', kopts));
+        } catch (_) {}
+      }
+
+      nudgePlayer();
+    }
+
+    // Variable cadence ~6–10s so pattern is less robotic
+    function scheduleActivity() {
+      if (!farmingActive()) {
+        setTimeout(scheduleActivity, 10000);
+        return;
+      }
+      synthActivity();
+      const next = 6000 + Math.floor(Math.random() * 4000);
+      setTimeout(scheduleActivity, next);
+    }
+    scheduleActivity();
+
+    // Extra player health check — sadece farm açıkken
+    setInterval(() => {
+      if (!farmingActive()) return;
+      nudgePlayer();
+    }, 12000);
+    // Re-assert visibility — sadece farm açıkken
+    setInterval(() => {
+      if (!farmingActive()) return;
+      forceVisible();
+    }, 30000);
+
+    // Initial kick
+    setTimeout(synthActivity, 1500);
+    setTimeout(nudgePlayer, 2500);
+  })();
+
+  function setStatus(msg) {
+    try {
+      if (typeof msg === 'string' && KC.t && /^[a-z0-9_]+$/i.test(msg)) {
+        const tr = KC.t(msg);
+        if (tr) msg = tr;
+      }
+    } catch (_) {}
+    statusText = msg;
+    try {
+      KC.emit('bot:status', msg);
+    } catch (_) {}
+    try {
+      const el = document.getElementById('kc-lhud-status');
+      if (el) el.textContent = msg || '';
+    } catch (_) {}
+  }
+
+  function currentSlug() {
+    try {
+      const p = location.pathname.split('/').filter(Boolean);
+      if (
+        p.length === 1 &&
+        !/^(categories|category|video|videos|browse|search|following|dashboard|settings|login|signup|community|clips)$/i.test(
+          p[0]
+        )
+      ) {
+        return p[0].toLowerCase();
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  function getVideo() {
+    return (
+      document.getElementById('video-player') ||
+      document.querySelector('video#video-player, video[src], video')
+    );
+  }
+
+  /** Media is actually advancing */
+  function isVideoHealthy() {
+    const v = getVideo();
+    if (!v) return false;
+    const now = Date.now();
+    const t = Number(v.currentTime) || 0;
+    if (t > lastVideoTime + 0.1) {
+      lastVideoTime = t;
+      lastVideoProgressAt = now;
+      return true;
+    }
+    // Grace: recent progress OR playing with buffer
+    if (lastVideoProgressAt && now - lastVideoProgressAt < 15000) {
+      return !v.ended && (v.readyState >= 2 || !v.paused);
+    }
+    if (!v.paused && !v.ended && v.readyState >= 2) {
+      lastVideoProgressAt = now;
+      return true;
+    }
+    // Live edge often freezes currentTime briefly while buffered advances
+    try {
+      if (!v.paused && !v.ended && v.buffered && v.buffered.length) {
+        const end = v.buffered.end(v.buffered.length - 1);
+        if (end - t > 0.5) {
+          lastVideoProgressAt = now;
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  function isVideoStuck() {
+    const v = getVideo();
+    if (!v) return true;
+    if (v.ended) return true;
+    const now = Date.now();
+    // Never seen progress
+    if (!lastVideoProgressAt) {
+      // give first load some time
+      return now - (v.dataset?.kcSeenAt ? Number(v.dataset.kcSeenAt) : now) > STUCK_MS;
+    }
+    return now - lastVideoProgressAt > STUCK_MS;
+  }
+
+  function pageSaysOffline() {
+    try {
+      // Normalize Turkish I/İ variants for matching
+      const norm = (s) =>
+        String(s || '')
+          .toLowerCase()
+          .replace(/ı/g, 'i')
+          .replace(/İ/g, 'i')
+          .replace(/I/g, 'i')
+          .replace(/\s+/g, ' ')
+          .trim();
+      const offlineRe = /\b(offline|cevrim\s*disi|host\s*is\s*offline|channel\s*is\s*offline)\b/i;
+
+      // Banner / badge text (Kick shows "ÇEVRİM DIŞI")
+      const tight = document.querySelectorAll(
+        '[class*="offline" i], [data-testid*="offline" i], [class*="Offline" i], [class*="badge" i], span, div, p, h1, h2, h3'
+      );
+      let checked = 0;
+      for (const el of tight) {
+        if (checked++ > 80) break;
+        const raw = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!raw || raw.length > 120) continue;
+        if (offlineRe.test(norm(raw))) return true;
+      }
+      // Visible main area sample
+      const bodySlice = norm((document.body?.innerText || '').slice(0, 4000));
+      if (offlineRe.test(bodySlice)) return true;
+      // No live video player + offline-looking empty state
+      const v = getVideo();
+      if (!v || v.ended || (v.readyState < 2 && v.paused)) {
+        if (/cevrim\s*disi|offline/.test(bodySlice)) return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  /**
+   * live = healthy progressive video
+   * bad  = offline UI / no video / stuck
+   */
+  function getWatchState() {
+    const slug = currentSlug();
+    if (!slug) return { ok: false, reason: 'kanal-degil', slug: '' };
+
+    const v = getVideo();
+    if (v && !v.dataset.kcSeenAt) v.dataset.kcSeenAt = String(Date.now());
+
+    if (pageSaysOffline()) return { ok: false, reason: 'offline-ui', slug };
+
+    if (isVideoHealthy()) return { ok: true, reason: 'video-ok', slug };
+
+    if (!v) return { ok: false, reason: 'video-yok', slug };
+
+    if (isVideoStuck()) return { ok: false, reason: 'video-takili', slug };
+
+    if (v.paused || v.readyState < 2) return { ok: false, reason: 'video-durdu', slug };
+
+    // brief buffer grace
+    return { ok: true, reason: 'buffer', slug };
+  }
+
+  /** fetch with hard timeout so a hung request can never freeze the bot loop */
+  async function fetchTimeout(url, opts, ms) {
+    if (KC.netFetch) return KC.netFetch(url, opts, ms || 6000);
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), ms || 6000);
+    try {
+      return await fetch(url, Object.assign({}, opts, { signal: ctl.signal }));
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  async function fetchLives() {
+    // Cache: array of { slug, viewers }
+    if (Date.now() - liveCacheAt < 25000 && liveCache.length >= 3) return liveCache;
+    // Backoff: son denemeler tamamen başarısızsa bir süre ağa gitme, eski listeyi kullan
+    if (Date.now() < liveBlockedUntil && liveCache.length) return liveCache;
+    const bySlug = new Map(); // slug -> max viewers
+
+    function addSlug(slug, viewers) {
+      if (!slug || typeof slug !== 'string') return;
+      slug = String(slug).toLowerCase().trim();
+      if (slug.length > 30 && /[0-9a-f]{8}-/.test(slug)) return;
+      if (slug.length < 2 || slug.length > 28) return;
+      if (
+        /^(categories|category|video|videos|browse|search|dashboard|settings|login|signup|following|community|clips)$/.test(
+          slug
+        )
+      )
+        return;
+      const v = Math.max(0, Number(viewers) || 0);
+      const prev = bySlug.get(slug);
+      if (prev == null || v > prev) bySlug.set(slug, v);
+    }
+
+    const urls = [
+      // sort=viewers → 422 (Kick 2026); sort=desc or no sort works
+      'https://kick.com/stream/livestreams/en?limit=40&sort=desc',
+      'https://kick.com/stream/livestreams/tr?limit=30&sort=desc',
+      'https://kick.com/stream/livestreams/en-US?limit=40&sort=desc',
+      'https://kick.com/stream/livestreams/en?limit=40',
+      'https://kick.com/stream/livestreams/tr?limit=30',
+      'https://kick.com/stream/livestreams/en?page=2&limit=25&sort=desc',
+      'https://kick.com/stream/livestreams/es?limit=20&sort=desc',
+      'https://web.kick.com/api/v1/livestreams?limit=30&sort=viewer_count_desc'
+    ];
+
+    let anyOk = false;
+    function ingest(json) {
+      // stream API: { data: [...] } | web.kick: { data: { livestreams: [...] } }
+      let arr = [];
+      if (Array.isArray(json?.data?.livestreams)) arr = json.data.livestreams;
+      else if (Array.isArray(json?.data)) arr = json.data;
+      else if (Array.isArray(json?.livestreams)) arr = json.livestreams;
+      else if (Array.isArray(json)) arr = json;
+      for (const item of arr) {
+        if (item?.is_live === false) continue;
+        const rawSlug = item?.slug;
+        // Kick stream API: top-level slug is often session id — prefer channel
+        const s =
+          item?.channel?.slug ||
+          item?.channel?.user?.username ||
+          item?.user?.username ||
+          item?.broadcaster_user?.username ||
+          (rawSlug &&
+          !/^[0-9a-f]{8}-/i.test(String(rawSlug)) &&
+          String(rawSlug).length < 40
+            ? rawSlug
+            : null);
+        const viewers =
+          item?.viewer_count ??
+          item?.viewers ??
+          item?.channel?.viewer_count ??
+          0;
+        addSlug(s, viewers);
+      }
+    }
+    async function one(url) {
+      try {
+        const res = await fetchTimeout(
+          url,
+          {
+            credentials: 'include',
+            headers: { Accept: 'application/json', 'x-app-platform': 'web' },
+            cache: 'no-store'
+          },
+          6000
+        );
+        if (!res.ok) return;
+        ingest(await res.json());
+        anyOk = true;
+      } catch (e) {
+        KCwarn('[KC] live fetch fail', url, e && e.name === 'AbortError' ? 'timeout' : e);
+      }
+    }
+
+    // 1. dalga: ilk 3 URL aynı anda (en yavaşı 6 sn ile sınırlı)
+    await Promise.all(urls.slice(0, 3).map(one));
+    // 2. dalga: yeterli kanal yoksa kalanları sırayla dene
+    for (const url of urls.slice(3)) {
+      if (bySlug.size >= 15) break;
+      await one(url);
+    }
+
+    // Sidebar / following DOM fallback (viewers unknown → 0) — sadece API az sonuç verdiyse
+    try {
+      if (bySlug.size < 5) document.querySelectorAll('a[href^="/"]').forEach((a) => {
+        const href = a.getAttribute('href') || '';
+        const parts = href.split('/').filter(Boolean);
+        if (parts.length !== 1) return;
+        const s = parts[0].toLowerCase();
+        if (
+          /^(categories|category|video|videos|browse|search|dashboard|settings|login|signup|following|community|clips)$/.test(
+            s
+          )
+        )
+          return;
+        const row = a.closest('div, li') || a.parentElement || a;
+        const txt = (row.textContent || '').toLowerCase();
+        if (txt.includes('offline') || txt.includes('çevrim')) return;
+        if (/\blive\b|\d/.test(txt) || a.querySelector('img, [class*="live" i]')) {
+          // try parse viewer count from row text
+          let vc = 0;
+          const m = (row.textContent || '').match(/(\d[\d.,]*)\s*(k|b)?/i);
+          if (m) {
+            let n = parseFloat(m[1].replace(',', '.'));
+            if (/k/i.test(m[2] || '')) n *= 1000;
+            if (/b/i.test(m[2] || '')) n *= 1000000;
+            if (!isNaN(n)) vc = Math.floor(n);
+          }
+          addSlug(s, vc);
+        }
+      });
+    } catch (_) {}
+
+    const fresh = [...bySlug.entries()]
+      .map(([slug, viewers]) => ({ slug, viewers }))
+      .sort((a, b) => b.viewers - a.viewers);
+    if (anyOk && fresh.length) {
+      liveFailStreak = 0;
+      liveBlockedUntil = 0;
+      liveCache = fresh;
+      liveCacheAt = Date.now();
+    } else {
+      // başarısız: iyi eski listeyi silme, üstel bekleme uygula (15s → 30s → 60s … max 2dk)
+      liveFailStreak++;
+      liveBlockedUntil = Date.now() + Math.min(120000, 15000 * Math.pow(2, liveFailStreak - 1));
+      if (!liveCache.length) liveCache = fresh;
+      KCwarn('[KC] live list refresh failed, backoff', liveFailStreak);
+    }
+    console.log(
+      '[KC] live cache',
+      liveCache.length,
+      liveCache.slice(0, 8).map((x) => x.slug + ':' + x.viewers)
+    );
+    return liveCache;
+  }
+
+  /** Optional: confirm channel is still live before navigating */
+  async function isSlugLive(slug) {
+    try {
+      const res = await fetchTimeout(
+        'https://kick.com/api/v2/channels/' + encodeURIComponent(slug) + '/livestream',
+        { credentials: 'include', headers: { Accept: 'application/json' }, cache: 'no-store' },
+        4000
+      );
+      if (!res.ok) return null;
+      const j = await res.json();
+      const data = j?.data ?? j;
+      if (!data) return false;
+      if (data.is_live === false) return false;
+      // presence of id / session means live
+      return !!(data.id || data.session_title || data.playback_url);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /** Confirm current channel live status via API (cached ~12s). */
+  async function checkCurrentLive() {
+    const slug = currentSlug();
+    if (!slug) return false;
+    const now = Date.now();
+    if (slug === lastLiveCheckSlug && now - lastLiveCheckAt < 12000) {
+      return lastLiveCheckResult;
+    }
+    lastLiveCheckSlug = slug;
+    lastLiveCheckAt = now;
+    const ok = await isSlugLive(slug);
+    lastLiveCheckResult = ok;
+    return ok;
+  }
+
+  async function goNextLive(reason) {
+    if (goNextBusy) return;
+    goNextBusy = true;
+    try {
+      await goNextLiveInner(reason);
+    } finally {
+      goNextBusy = false;
+    }
+  }
+
+  async function goNextLiveInner(reason) {
+    const urgent = /offline|api-offline|video-yok/i.test(String(reason || ''));
+    if (!urgent && Date.now() < switchCooldownUntil) {
+      setStatus('Bekleniyor…');
+      return;
+    }
+    const cur = currentSlug();
+    setStatus('Canlı aranıyor…');
+    const lives = await fetchLives(); // [{slug, viewers}, ...] sorted desc
+    const minV = Math.max(0, parseInt(KC.settings?.min_viewers, 10) || 0);
+
+    let pool = lives.filter((x) => x.slug !== cur);
+    if (!pool.length) pool = lives.slice();
+
+    // Prefer channels at/above min viewers
+    let filtered = minV > 0 ? pool.filter((x) => x.viewers >= minV) : pool.slice();
+    if (!filtered.length && minV > 0) {
+      // fallback: take top half by viewers anyway
+      filtered = pool.slice(0, Math.max(3, Math.ceil(pool.length / 2)));
+      KCwarn('[KC] Level bot: no channel >= min_viewers', minV, '— using top by viewers');
+    }
+    if (!filtered.length) {
+      setStatus('Canlı kanal yok');
+      KCwarn('[KC] Level bot: no live channels', reason);
+      switchCooldownUntil = Date.now() + 10000;
+      return;
+    }
+
+    // Already sorted by viewers desc from fetchLives — bias pick toward top
+    // Weighted random: higher viewers more likely
+    const top = filtered.slice(0, 20);
+    const weights = top.map((x, i) => {
+      // rank weight + log viewers
+      const rankW = top.length - i;
+      const viewW = Math.log10(Math.max(1, x.viewers) + 1) * 3;
+      return rankW + viewW;
+    });
+    const sum = weights.reduce((a, b) => a + b, 0) || 1;
+    let r = Math.random() * sum;
+    let pickObj = top[0];
+    for (let i = 0; i < top.length; i++) {
+      r -= weights[i];
+      if (r <= 0) {
+        pickObj = top[i];
+        break;
+      }
+    }
+
+    // Verify a few candidates are still live (prefer higher in list)
+    let pick = pickObj.slug;
+    const candidates = [pickObj, ...top.filter((x) => x.slug !== pickObj.slug)].slice(0, 3);
+    for (const c of candidates) {
+      const ok = await isSlugLive(c.slug);
+      if (ok === true) {
+        pick = c.slug;
+        pickObj = c;
+        break;
+      }
+      if (ok === false) continue;
+      // null = unknown — accept
+      pick = c.slug;
+      pickObj = c;
+      break;
+    }
+
+    switchCooldownUntil = Date.now() + (urgent ? 8000 : 16000);
+    consecutiveBad = 0;
+    lastVideoTime = 0;
+    lastVideoProgressAt = 0;
+    const vLabel = pickObj && pickObj.viewers != null ? ' · ' + pickObj.viewers + ' izl.' : '';
+    setStatus('Geçiliyor: ' + pick + vLabel);
+    KC.logSwitch(currentSlug() || '', pick, reason || 'level-bot');
+    console.log('[KC] Level bot switch', {
+      from: cur,
+      to: pick,
+      viewers: pickObj?.viewers,
+      min_viewers: minV,
+      reason
+    });
+    location.href = 'https://kick.com/' + encodeURIComponent(pick);
+  }
+
+  function tickAntiStuck() {
+    // Also keep stream healthy while farming drops / level
+    if (
+      !KC.settings?.anti_stuck &&
+      !KC.settings?.level_bot &&
+      !KC.settings?.drops_enabled &&
+      !KC.settings?.bg_watch
+    )
+      return;
+    const v = getVideo();
+    if (!v) return;
+    try {
+      if (typeof KC.safePlayVideo === 'function') KC.safePlayVideo(v);
+      else {
+        try {
+          if (v.paused && !v.ended) {
+            const p = v.play();
+            if (p && p.catch) p.catch(() => {});
+          }
+        } catch (_) {}
+      }
+      // Gecikme (canlıdan geri kalma) düzeltmesi artık stall-guard.js › autoLagTick'te
+    } catch (_) {}
+  }
+
+  async function tickBot() {
+    if (tickBotBusy) return;
+    tickBotBusy = true;
+    try {
+      await tickBotInner();
+    } finally {
+      tickBotBusy = false;
+    }
+  }
+
+  async function tickBotInner() {
+    // ONLY Level Bot switches channels. Level Koruması (anti_stuck) never navigates.
+    if (!KC.settings?.level_bot) {
+      if (KC.settings?.anti_stuck) {
+        setStatus('İzleniyor: ' + (currentSlug() || '?'));
+      } else {
+        setStatus('Kapalı');
+      }
+      return;
+    }
+
+    // Drop izle öncelikli: drop hedefi varken veya drop yayını izlenirken kanal değiştirme
+    try {
+      if (KC.settings?.drops_enabled && typeof KC.dropsShouldControl === 'function' && KC.dropsShouldControl()) {
+        consecutiveBad = 0;
+        setStatus('İzleniyor: ' + (currentSlug() || '?') + ' · drops');
+        return;
+      }
+    } catch (_) {}
+
+    const state = getWatchState();
+
+    // Offline UI → hemen API doğrula ve geç
+    if (state.reason === 'offline-ui' || pageSaysOffline()) {
+      setStatus('Çevrimdışı · geçiliyor…');
+      const live = await checkCurrentLive();
+      if (live === false || live === null) {
+        // null: API belirsiz ama UI offline — yine de geç
+        consecutiveBad = BAD_NEED;
+        console.log('[KC] offline detected, switching', state.slug, live);
+        try {
+          if (KC.settings?.drops_enabled && typeof KC.dropsShouldControl === 'function' && KC.dropsShouldControl()) {
+            consecutiveBad = 0;
+            return;
+          }
+        } catch (_) {}
+        goNextLive('offline');
+        return;
+      }
+      // API says still live — UI false positive, keep watching
+      consecutiveBad = 0;
+      setStatus('İzleniyor: ' + (state.slug || '?'));
+      return;
+    }
+
+    // Periyodik API canlı kontrolü (video "ok" görünse bile kanal bitmiş olabilir)
+    if (state.ok) {
+      const now = Date.now();
+      if (now - lastLiveCheckAt > 20000) {
+        const live = await checkCurrentLive();
+        if (live === false) {
+          setStatus('Yayın bitti · geçiliyor…');
+          consecutiveBad = BAD_NEED;
+          goNextLive('api-offline');
+          return;
+        }
+      }
+      consecutiveBad = 0;
+      setStatus('İzleniyor: ' + (state.slug || '?'));
+      return;
+    }
+
+    consecutiveBad++;
+    // video yok / takılı: offline olabilir — 2 tick sonra API
+    if (consecutiveBad >= 2 && (state.reason === 'video-yok' || state.reason === 'video-takili' || state.reason === 'video-durdu')) {
+      const live = await checkCurrentLive();
+      if (live === false) {
+        setStatus('Çevrimdışı · geçiliyor…');
+        goNextLive('api-offline');
+        return;
+      }
+    }
+
+    setStatus(
+      'Sorun ' + consecutiveBad + '/' + BAD_NEED + ' · ' + (state.slug || '?')
+    );
+    console.log('[KC] bad tick', consecutiveBad, state);
+
+    if (consecutiveBad >= BAD_NEED) {
+      try {
+        if (KC.settings?.drops_enabled && typeof KC.dropsShouldControl === 'function' && KC.dropsShouldControl()) {
+          consecutiveBad = 0;
+          return;
+        }
+      } catch (_) {}
+      goNextLive(state.reason);
+    }
+  }
+
+  function start() {
+    if (!KC.settings?.level_bot && !KC.settings?.anti_stuck) {
+      stop();
+      return;
+    }
+    if (botTimer) clearInterval(botTimer);
+    consecutiveBad = 0;
+    lastVideoTime = 0;
+    lastVideoProgressAt = 0;
+    botTimer = setInterval(() => {
+      if (!KC.settings?.level_bot && !KC.settings?.anti_stuck) {
+        stop();
+        return;
+      }
+      tickAntiStuck();
+      tickBot();
+    }, TICK_MS);
+    setTimeout(tickAntiStuck, 800);
+    setTimeout(tickBot, 2000);
+    setStatus('Başladı…');
+    console.log('[KC] Level bot started', {
+      level_bot: !!KC.settings?.level_bot,
+      anti_stuck: !!KC.settings?.anti_stuck
+    });
+    try { forceVisible(); } catch (_) {}
+  }
+
+  function stop() {
+    if (botTimer) clearInterval(botTimer);
+    botTimer = null;
+    consecutiveBad = 0;
+    setStatus('Kapalı');
+  }
+
+  KC.startLevelBot = start;
+  KC.stopLevelBot = stop;
+  KC.getBotStatus = () => statusText;
+  /** API: mevcut kanal hâlâ canlı mı? (önbellekli ~12 sn). true/false/null */
+  KC.checkCurrentLive = checkCurrentLive;
+  KC.isSlugLive = isSlugLive;
+  KC._goNextLive = (reason) => {
+    switchCooldownUntil = 0;
+    consecutiveBad = 0;
+    return goNextLive(reason || 'manual');
+  };
+  KC.forceSwitchChannel = () => {
+    // Drops açıksa drop yayınına git; yoksa level listesi
+    try {
+      if (typeof KC.forceNextStream === 'function') {
+        return KC.forceNextStream('manual');
+      }
+    } catch (_) {}
+    switchCooldownUntil = 0;
+    consecutiveBad = 0;
+    return goNextLive('manual');
+  };
+
+
+
+  // ── Level verisi (birleşik HUD için) ──
+  let sessionStartedAt = Date.now();
+  let watchSeconds = 0;
+  let lastTickAt = Date.now();
+
+  function fmtDur(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) return h + 's ' + m + 'dk';
+    if (m > 0) return m + 'dk ' + s + 'sn';
+    return s + 'sn';
+  }
+
+  KC.getLevelHudSnapshot = function () {
+    const slug = currentSlug() || '—';
+    const v = getVideo();
+    let health = 'Bekleniyor';
+    let healthClass = 'wait';
+    try {
+      if (v) {
+        if (isVideoHealthy()) {
+          health = 'Sağlıklı izleme';
+          healthClass = 'ok';
+        } else if (v.paused) {
+          health = 'Duraklatıldı';
+          healthClass = 'bad';
+        } else {
+          health = 'Takılma riski';
+          healthClass = 'warn';
+        }
+      } else {
+        health = 'Video yok';
+        healthClass = 'bad';
+      }
+    } catch (_) {}
+
+    const now = Date.now();
+    if (healthClass === 'ok') {
+      watchSeconds += (now - lastTickAt) / 1000;
+    }
+    lastTickAt = now;
+
+    // Anlık faaliyet özeti (HUD "Şu an")
+    let nowDoing = 'Beklemede';
+    try {
+      const st = String(statusText || '');
+      const dropsOn = !!KC.settings?.drops_enabled;
+      const levelOn = !!KC.settings?.level_bot;
+      const antiOn = !!KC.settings?.anti_stuck;
+      const S = KC.getStreamStatusSnapshot && KC.getStreamStatusSnapshot();
+      const streamBad =
+        S &&
+        (S.statusClass === 'bad' ||
+          S.statusClass === 'warn' ||
+          (S.status && /takıl|yüklen|durak|hata/i.test(String(S.status))));
+
+      // Kısa özet: yayın durumu · kanal (gereksiz uzun metin yok)
+      const streamOk = !streamBad && S && S.status && !/takıl|yüklen|durak|kapalı/i.test(String(S.status));
+      if (streamBad && (antiOn || levelOn || dropsOn)) {
+        nowDoing =
+          (S && S.status ? S.status : 'Yayın onarılıyor') +
+          (slug ? ' · ' + slug : '') +
+          (S && S.next && S.next !== 'İzleniyor' && S.next !== '—'
+            ? ' → ' + S.next
+            : '');
+      } else if (streamOk || (S && S.status)) {
+        // Örn: "Akıyor · cyberrulztv"
+        nowDoing = (S.status || st || 'İzleniyor') + (slug ? ' · ' + slug : '');
+      } else if (/geçiliyor|aranıyor|bekleniyor|canlı/i.test(st)) {
+        nowDoing = st + (slug && !st.includes(slug) ? ' · ' + slug : '');
+      } else if (dropsOn && KC.getDropsNowDoing) {
+        const d = KC.getDropsNowDoing();
+        if (d) nowDoing = d;
+        else nowDoing = (levelOn ? 'Level' : 'Drops') + (slug ? ' · ' + slug : '');
+      } else if (levelOn) {
+        nowDoing = 'Level' + (slug ? ' · ' + slug : '');
+      } else if (st && st !== 'Kapalı') {
+        nowDoing = st + (slug ? ' · ' + slug : '');
+      } else {
+        nowDoing = 'Kapalı';
+      }
+      try {
+        KC.nowDoing = nowDoing;
+      } catch (_) {}
+    } catch (_) {
+      nowDoing = statusText || '—';
+    }
+
+    return {
+      status: statusText || 'Kapalı',
+      nowDoing: nowDoing,
+      slug: slug,
+      health: health,
+      healthClass: healthClass,
+      session: fmtDur((Date.now() - sessionStartedAt) / 1000),
+      watch: fmtDur(watchSeconds),
+      sessionSec: Math.round((Date.now() - sessionStartedAt) / 1000),
+      watchSec: Math.round(watchSeconds),
+      levelBot: !!KC.settings?.level_bot,
+      antiStuck: !!KC.settings?.anti_stuck,
+      bgWatch: !!KC.settings?.bg_watch
+    };
+  };
+
+  function removeSeparateLevelHud() {
+    try {
+      const old = document.getElementById('kc-level-hud');
+      if (old) old.remove();
+    } catch (_) {}
+  }
+
+  function refreshCombinedHud() {
+    removeSeparateLevelHud();
+    try {
+      if (typeof KC.renderDropsHud === 'function') KC.renderDropsHud();
+      else if (typeof renderDropsHud === 'function') renderDropsHud();
+    } catch (_) {}
+  }
+
+  setInterval(() => {
+    try {
+      if (KC.settings?.level_bot || KC.settings?.anti_stuck || KC.settings?.drops_enabled) {
+        refreshCombinedHud();
+      }
+    } catch (_) {}
+  }, 3000);
+
+  KC.on('bot:status', () => {
+    try {
+      if (KC.settings?.level_bot || KC.settings?.anti_stuck || KC.settings?.drops_enabled) {
+        refreshCombinedHud();
+      }
+    } catch (_) {}
+  });
+
+  KC.settingsReady.then(() => {
+    removeSeparateLevelHud();
+    if (KC.settings.level_bot || KC.settings.anti_stuck) start();
+    else stop();
+  });
+
+  KC.on('setting:level_bot', (on) => {
+    try { refreshCombinedHud(); } catch (_) {}
+    if (on || KC.settings.anti_stuck) start();
+    else stop();
+  });
+  KC.on('setting:anti_stuck', (on) => {
+    try { refreshCombinedHud(); } catch (_) {}
+    if (on || KC.settings.level_bot) start();
+    else stop();
+  });
+})();
